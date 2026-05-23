@@ -14,6 +14,10 @@ jobs:
   security:
     name: Security scan
     runs-on: ubuntu-24.04
+    # CGO + libyara are required so gosec/govulncheck can load the cgo go-yara
+    # package; without them they fail with "could not import C (no metadata for C)".
+    env:
+      CGO_ENABLED: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -23,16 +27,25 @@ jobs:
           cache: true
           cache-dependency-path: app/go.sum
 
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libyara-dev libssl-dev
+
       - name: govulncheck
         uses: golang/govulncheck-action@v1
         with:
           go-version-file: app/go.mod
           work-dir: app
 
+      # Run gosec on the host (matching ci.yml) so it can load the cgo go-yara
+      # package, and apply the same exclusions: G104 is noise (redundant with go
+      # vet/errcheck), and cmd/* + testserver are dev/test tooling. Production
+      # false positives are annotated inline with #nosec.
       - name: gosec
-        uses: securego/gosec@master
-        with:
-          args: ./app/...
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          cd app && gosec -exclude=G104 -exclude-dir=cmd -exclude-dir=testserver ./...
 
       - name: trivy
         uses: aquasecurity/trivy-action@master

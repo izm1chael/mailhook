@@ -3,7 +3,6 @@
 [![CI](https://github.com/izm1chael/mailhook/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/izm1chael/mailhook/actions/workflows/ci.yml)
 [![Release](https://github.com/izm1chael/mailhook/actions/workflows/release.yml/badge.svg)](https://github.com/izm1chael/mailhook/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Go Report](https://goreportcard.com/badge/github.com/izm1chael/mailhook)](https://goreportcard.com/report/github.com/izm1chael/mailhook)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](app/go.mod)
 
 A self-hosted email security gateway. MailHook monitors IMAP mailboxes over IDLE, runs
