@@ -375,7 +375,7 @@ func TestE2E_StaticAssets(t *testing.T) {
 	e := newTestEnv(t)
 
 	for _, asset := range []string{
-		"/static/tailwind.min.js",
+		"/static/tailwind.css",
 		"/static/alpine.min.js",
 		"/static/chart.min.js",
 	} {

@@ -70,6 +70,11 @@ jobs:
   security:
     name: Security scan
     runs-on: ubuntu-24.04
+    # CGO must be enabled so the scanners can load the go-yara cgo package.
+    # Without this (and libyara-dev below) govulncheck/gosec fail with
+    # "could not import C (no metadata for C)".
+    env:
+      CGO_ENABLED: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -79,16 +84,23 @@ jobs:
           cache: true
           cache-dependency-path: app/go.sum
 
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libyara-dev libssl-dev
+
       - name: govulncheck
         uses: golang/govulncheck-action@v1
         with:
           go-version-file: app/go.mod
           work-dir: app
 
+      # gosec runs on the host (not the containerized action) so it can load the
+      # cgo go-yara package against the libyara-dev installed above.
       - name: gosec
-        uses: securego/gosec@9c4bb74a6258fe3818db8354b376ecca985704aa  # v2.26.1
-        with:
-          args: ./app/...
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          cd app && gosec ./...
 
       - name: trivy
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8  # v0.36.0
@@ -108,12 +120,11 @@ jobs:
           sudo ldconfig
 
       - name: gosec (AI tag)
-        uses: securego/gosec@9c4bb74a6258fe3818db8354b376ecca985704aa  # v2.26.1
-        with:
-          args: -tags ai ./app/...
         env:
           CGO_CFLAGS: "-I/usr/local/include/onnxruntime"
           CGO_LDFLAGS: "-L/usr/local/lib -lonnxruntime"
+        run: |
+          cd app && gosec -tags ai ./...
 
   build-check-ai:
     name: Build check (AI)
