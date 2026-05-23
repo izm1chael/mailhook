@@ -294,7 +294,7 @@ func Load() (*Config, error) {
 }
 
 func (c *Config) loadYAML(path string) error {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- path is the operator-provided config file path, not request input
 	if err != nil {
 		return err // preserve os.ErrNotExist for caller to inspect
 	}

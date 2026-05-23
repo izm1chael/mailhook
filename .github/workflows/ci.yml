@@ -97,10 +97,16 @@ jobs:
 
       # gosec runs on the host (not the containerized action) so it can load the
       # cgo go-yara package against the libyara-dev installed above.
+      # -exclude=G104: unhandled-error rule is redundant with go vet/errcheck and
+      #   extremely noisy on w.Write/flush in HTTP+SSE handlers where the error is
+      #   unactionable (client already gone).
+      # -exclude-dir: cmd/* (bench/seed/simulate/soak) and the IMAP testserver are
+      #   dev/benchmark/test tooling, not part of the shipped gateway's attack surface.
+      # Remaining production false positives are annotated inline with `#nosec Gxxx`.
       - name: gosec
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@latest
-          cd app && gosec ./...
+          cd app && gosec -exclude=G104 -exclude-dir=cmd -exclude-dir=testserver ./...
 
       - name: trivy
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8  # v0.36.0
@@ -124,7 +130,7 @@ jobs:
           CGO_CFLAGS: "-I/usr/local/include/onnxruntime"
           CGO_LDFLAGS: "-L/usr/local/lib -lonnxruntime"
         run: |
-          cd app && gosec -tags ai ./...
+          cd app && gosec -tags ai -exclude=G104 -exclude-dir=cmd -exclude-dir=testserver ./...
 
   build-check-ai:
     name: Build check (AI)

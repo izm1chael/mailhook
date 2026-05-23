@@ -373,7 +373,7 @@ func (h *ActionsHandler) BulkAction(w http.ResponseWriter, r *http.Request) {
 		gCopy := g
 		wg.Add(1)
 		imapSem <- struct{}{}
-		go func() {
+		go func() { // #nosec G118 -- async bulk action outlives the HTTP request; uses its own timeout context
 			defer func() { <-imapSem; wg.Done() }()
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
@@ -404,7 +404,7 @@ func (h *ActionsHandler) BulkAction(w http.ResponseWriter, r *http.Request) {
 		mailbox := key.mailbox
 		wg.Add(1)
 		imapSem <- struct{}{}
-		go func() {
+		go func() { // #nosec G118 -- async bulk action outlives the HTTP request; uses its own timeout context
 			defer func() { <-imapSem; wg.Done() }()
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()

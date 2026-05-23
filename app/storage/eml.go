@@ -46,7 +46,7 @@ func (s *Store) Write(accountName, messageID string, uid uint32, raw []byte) (st
 	absPath := filepath.Join(dir, filename)
 	relPath := filepath.Join("emls", now.Format("2006"), now.Format("01"), now.Format("02"), filename)
 
-	if err := os.WriteFile(absPath, raw, 0o640); err != nil {
+	if err := os.WriteFile(absPath, raw, 0o600); err != nil {
 		return "", fmt.Errorf("write eml: %w", err)
 	}
 	return relPath, nil
@@ -58,7 +58,7 @@ func (s *Store) Read(relPath string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return os.ReadFile(absPath)
+	return os.ReadFile(absPath) // #nosec G304 -- absPath comes from safeAbs() which rejects traversal outside dataDir
 }
 
 // Delete removes the EML file at relPath.
@@ -102,7 +102,7 @@ func (s *Store) PurgeOlderThan(age time.Duration, protectedPaths map[string]stru
 			return nil
 		}
 		if info.ModTime().Before(cutoff) {
-			if removeErr := os.Remove(path); removeErr == nil {
+			if removeErr := os.Remove(path); removeErr == nil { // #nosec G122 -- walking app-owned dataDir, not attacker-controlled paths
 				deleted++
 				s.log.Debug("purged eml", "path", path, "age", time.Since(info.ModTime()).Round(time.Hour))
 			}
@@ -136,7 +136,7 @@ func (s *Store) ReconcileOrphans(knownPaths map[string]struct{}) (int, error) {
 			return nil
 		}
 		if _, ok := knownPaths[rel]; !ok {
-			if os.Remove(path) == nil {
+			if os.Remove(path) == nil { // #nosec G122 -- walking app-owned dataDir, not attacker-controlled paths
 				deleted++
 				s.log.Debug("orphaned eml removed", "path", rel)
 			}

@@ -329,7 +329,7 @@ func (l *Listener) dial(opts *imapclient.Options) (*imapclient.Client, error) {
 	tlsCfg := &tls.Config{
 		ServerName:         l.account.Host,
 		MinVersion:         tls.VersionTLS12,
-		InsecureSkipVerify: l.account.TLSSkipVerify, //nolint:gosec
+		InsecureSkipVerify: l.account.TLSSkipVerify, // #nosec G402 -- per-account opt-in (TLSSkipVerify); MITM risk warned in logs
 	}
 
 	conn, err := tls.Dial("tcp", addr, tlsCfg)

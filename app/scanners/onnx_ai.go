@@ -265,11 +265,11 @@ func (o *ONNXScanner) loadBERTEmbedded() error {
 }
 
 func (o *ONNXScanner) loadBERTDir(dir string) error {
-	modelData, err := os.ReadFile(dir + "/model.onnx")
+	modelData, err := os.ReadFile(dir + "/model.onnx") // #nosec G304 -- dir is the operator-configured model directory, not request input
 	if err != nil {
 		return err
 	}
-	tokData, err := os.ReadFile(dir + "/tokenizer.json")
+	tokData, err := os.ReadFile(dir + "/tokenizer.json") // #nosec G304 -- dir is the operator-configured model directory, not request input
 	if err != nil {
 		return err
 	}
@@ -378,7 +378,7 @@ func (o *ONNXScanner) loadDGAEmbedded() error {
 }
 
 func (o *ONNXScanner) loadDGAFile(path string) error {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is an operator-configured model/data file, not request input
 	if err != nil {
 		return err
 	}
@@ -448,7 +448,7 @@ func (o *ONNXScanner) loadTrancoEmbedded() error {
 }
 
 func (o *ONNXScanner) loadTrancoFile(path string) error {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is an operator-configured model/data file, not request input
 	if err != nil {
 		return err
 	}

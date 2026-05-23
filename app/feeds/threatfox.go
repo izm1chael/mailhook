@@ -21,7 +21,7 @@ func (threatfoxFeed) Fetch(ctx context.Context, cacheDir string) ([]string, erro
 	raw, err := httpGet(ctx, threatfoxURL, "MailHook/1.0")
 	if err != nil {
 		// Fall back to local cache — do not use loadCacheFile (its .csv branch calls parseURLhaus)
-		cached, readErr := os.ReadFile(cachePath)
+		cached, readErr := os.ReadFile(cachePath) // #nosec G304 -- cachePath is an app-controlled feed cache path, not request input
 		if readErr != nil {
 			return nil, readErr
 		}

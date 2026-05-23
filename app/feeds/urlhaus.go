@@ -206,7 +206,7 @@ func httpGet(ctx context.Context, rawURL, userAgent string) ([]byte, error) {
 }
 
 func loadCacheFile(path string) ([]string, error) {
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) // #nosec G304 -- path is an app-controlled feed cache path, not request input
 	if err != nil {
 		return nil, fmt.Errorf("no cache at %s: %w", path, err)
 	}

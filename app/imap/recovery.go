@@ -63,7 +63,7 @@ func (r *Recovery) scan(ctx context.Context) error {
 	conn, err := tls.Dial("tcp", addr, &tls.Config{
 		ServerName:         r.account.Host,
 		MinVersion:         tls.VersionTLS12,
-		InsecureSkipVerify: r.account.TLSSkipVerify, //nolint:gosec
+		InsecureSkipVerify: r.account.TLSSkipVerify, // #nosec G402 -- per-account opt-in (TLSSkipVerify); MITM risk warned in logs
 	})
 	if err != nil {
 		return fmt.Errorf("dial: %w", err)

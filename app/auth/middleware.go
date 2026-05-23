@@ -60,7 +60,7 @@ func (m *Middleware) Require(next http.HandlerFunc) http.HandlerFunc {
 		sess, ok := m.store.Get(cookie.Value)
 		if !ok {
 			// Clear stale cookie — must include HttpOnly and Secure to match original flags
-			http.SetCookie(w, &http.Cookie{ // nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
+			http.SetCookie(w, &http.Cookie{ // #nosec G124 -- HttpOnly + SameSite=Strict always set; Secure follows config (secureCookies). nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
 				Name:     sessionCookieName,
 				Value:    "",
 				Path:     "/",
@@ -132,7 +132,7 @@ func (m *Middleware) SetCSRFCookie(w http.ResponseWriter) string {
 	mac := hmac.New(sha256.New, m.csrfSecret)
 	mac.Write(nonce)
 	sig := hex.EncodeToString(mac.Sum(nil))
-	http.SetCookie(w, &http.Cookie{ // nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- HttpOnly + SameSite=Strict always set; Secure follows config (secureCookies). nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
 		Name:     csrfCookieName,
 		Value:    nonceHex + "." + sig,
 		Path:     "/",
@@ -147,7 +147,7 @@ func (m *Middleware) SetCSRFCookie(w http.ResponseWriter) string {
 // Secure follows the middleware's secureCookies setting — false only for local HTTP dev
 // when MAILHOOK_INSECURE_COOKIES=true is set.
 func (m *Middleware) SetSessionCookie(w http.ResponseWriter, token string, maxAge int) {
-	http.SetCookie(w, &http.Cookie{ // nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- HttpOnly + SameSite=Strict always set; Secure follows config (secureCookies). nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
 		Name:     sessionCookieName,
 		Value:    token,
 		Path:     "/",

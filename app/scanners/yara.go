@@ -257,7 +257,7 @@ func (y *YARA) loadRules() error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".yar") {
 			return nil
 		}
-		f, err := os.Open(path)
+		f, err := os.Open(path) // #nosec G304 G122 -- path is a .yar file under the operator-configured rulesDir, not attacker-controlled
 		if err != nil {
 			y.log.Warn("yara: cannot open rule file", "path", path, "err", err)
 			return nil

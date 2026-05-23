@@ -117,7 +117,7 @@ func (n *Notifier) sendWebhook(ctx context.Context, email *pipeline.Email, vd pi
 	// SSRF guard is enforced by the pinning DialContext in newSSRFSafeClient:
 	// DNS resolves once, the resolved IP is validated as public, and the connection
 	// is pinned to that IP — eliminating the TOCTOU window (F-022).
-	go func() {
+	go func() { // #nosec G118 -- fire-and-forget notification must outlive the request context
 		type payload struct {
 			Verdict    string    `json:"verdict"`
 			From       string    `json:"from"`
@@ -169,7 +169,7 @@ func (n *Notifier) Send(ctx context.Context, email *pipeline.Email, vd pipeline.
 		title, priority, tags := notificationParams(vd)
 		body := fmt.Sprintf("Account: %s\nFrom: %s\nSubject: %s\n%s",
 			email.AccountName, from, subject, vd.Reason)
-		go n.post(context.Background(), title, priority, tags, body)
+		go n.post(context.Background(), title, priority, tags, body) // #nosec G118 -- fire-and-forget notification must outlive the request context
 	}
 	n.sendWebhook(ctx, email, vd)
 }

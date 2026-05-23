@@ -32,7 +32,7 @@ func (a *Actions) freshClient(ctx context.Context) (*imapclient.Client, error) {
 	tlsCfg := &tls.Config{
 		ServerName:         a.account.Host,
 		MinVersion:         tls.VersionTLS12,
-		InsecureSkipVerify: a.account.TLSSkipVerify, //nolint:gosec
+		InsecureSkipVerify: a.account.TLSSkipVerify, // #nosec G402 -- per-account opt-in (TLSSkipVerify); MITM risk warned in logs
 	}
 
 	conn, err := (&tls.Dialer{Config: tlsCfg}).DialContext(ctx, "tcp", addr)

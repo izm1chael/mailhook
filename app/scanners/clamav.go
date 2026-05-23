@@ -124,7 +124,7 @@ func (c *ClamAV) scanBytes(ctx context.Context, data []byte) (string, error) {
 			end = len(data)
 		}
 		chunk := data[i:end]
-		if err := binary.Write(conn, binary.BigEndian, uint32(len(chunk))); err != nil {
+		if err := binary.Write(conn, binary.BigEndian, uint32(len(chunk))); err != nil { // #nosec G115 -- chunk length is bounded by chunkSize (2048), no overflow
 			return "", fmt.Errorf("write chunk len: %w", err)
 		}
 		if _, err := conn.Write(chunk); err != nil {

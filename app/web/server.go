@@ -177,7 +177,7 @@ func templateFuncs() template.FuncMap {
 		"toJSON": func(v any) (template.JS, error) {
 			b, err := json.Marshal(v)
 			// nosemgrep: go.lang.security.audit.xss.template-html-does-not-escape.unsafe-template-type
-			return template.JS(b), err //nolint:gosec
+			return template.JS(b), err // #nosec G203 -- json.Marshal output is fully escaped; cannot break out of a JS string context
 		},
 	}
 }

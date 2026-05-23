@@ -38,7 +38,7 @@ func (m *Manager) Start(account config.AccountConfig, onEmail OnEmailFn) error {
 	if _, exists := m.cancels[account.Name]; exists {
 		return fmt.Errorf("account %q already running", account.Name)
 	}
-	ctx, cancel := context.WithCancel(m.parentCtx)
+	ctx, cancel := context.WithCancel(m.parentCtx) // #nosec G118 -- cancel is retained in m.cancels and invoked by Stop()
 	m.cancels[account.Name] = cancel
 
 	go NewListener(account, onEmail, m.log).Run(ctx)
@@ -78,7 +78,7 @@ func (m *Manager) Test(ctx context.Context, account config.AccountConfig) error 
 		TLSConfig: &tls.Config{
 			ServerName:         account.Host,
 			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: account.TLSSkipVerify, //nolint:gosec
+			InsecureSkipVerify: account.TLSSkipVerify, // #nosec G402 -- per-account opt-in (TLSSkipVerify); MITM risk warned in logs
 		},
 	})
 	if err != nil {

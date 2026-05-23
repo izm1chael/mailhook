@@ -137,7 +137,7 @@ func (h *EmailsHandler) PreviewHTML(w http.ResponseWriter, r *http.Request) {
 		raw, err := h.store.Read(scan.EMLPath)
 		if err == nil {
 			// ExtractAndSanitizeHTML sanitizes with bluemonday UGCPolicy (allows common formatting tags; strips scripts, iframes, and event handlers).
-			body = template.HTML(util.ExtractAndSanitizeHTML(raw)) // nosemgrep: go.lang.security.audit.xss.template-html-does-not-escape.unsafe-template-type
+			body = template.HTML(util.ExtractAndSanitizeHTML(raw)) // #nosec G203 -- input sanitized by bluemonday UGCPolicy (scripts/iframes/handlers stripped). nosemgrep: go.lang.security.audit.xss.template-html-does-not-escape.unsafe-template-type
 		}
 	}
 	if body == "" {
