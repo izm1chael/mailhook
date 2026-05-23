@@ -1,0 +1,166 @@
+# All-in-one image: mailhook + rspamd + clamd in a single container.
+# Use this for quick local testing or simple single-host deployments.
+# For production, use docker-compose.yml (separate containers per service).
+#
+# Build:  docker build -f Dockerfile.allinone -t mailhook:all-in-one --build-arg VERSION=dev .
+# Run:    docker run -d --name mailhook \
+#           -p 127.0.0.1:8080:8080 \
+#           -v mailhook-data:/var/lib/mailhook \
+#           -v mailhook-feeds:/var/cache/mailhook/feeds \
+#           -v mailhook-rules:/rules \
+#           --env-file ../.env \
+#           mailhook:all-in-one
+
+# ── Stage 1: build MailHook binary ───────────────────────────────────────────
+# Use Debian 12 (glibc 2.36) — binary is forward-compatible with Ubuntu 24.04 (glibc 2.39).
+# Debian 12 ships libyara 4.2.3; go-yara v4 needs >= 4.3, so we build YARA from source.
+FROM golang:1.26.3-bookworm@sha256:386d475a660466863d9f8c766fec64d7fdad3edac2c6a05020c09534d71edb4b AS builder
+
+ARG YARA_VERSION=4.5.2
+
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends \
+        gcc \
+        make \
+        automake \
+        autoconf \
+        libtool \
+        libssl-dev \
+        libmagic-dev \
+        libjansson-dev \
+        pkg-config \
+        ca-certificates \
+        wget \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    cd /tmp; \
+    wget -qO yara.tar.gz \
+      "https://github.com/VirusTotal/yara/archive/refs/tags/v${YARA_VERSION}.tar.gz"; \
+    tar -xzf yara.tar.gz; \
+    cd "yara-${YARA_VERSION}"; \
+    autoreconf -fiv; \
+    ./configure \
+        --enable-magic \
+        --with-crypto \
+        --disable-shared \
+        --enable-static \
+        --prefix=/usr/local; \
+    make -j"$(nproc)"; \
+    make install; \
+    rm -rf /tmp/yara*
+
+WORKDIR /src
+COPY app/go.mod app/go.sum ./
+RUN go mod download
+COPY app/ .
+
+ARG VERSION=dev
+RUN PKG_CONFIG_PATH=/usr/local/lib/pkgconfig \
+    CGO_ENABLED=1 GOOS=linux go build \
+    -tags yara_static \
+    -trimpath \
+    -ldflags="-s -w -X main.version=${VERSION}" \
+    -o /out/mailhook \
+    .
+
+# ── Stage 2: runtime with all services ───────────────────────────────────────
+FROM ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b
+
+# Avoid interactive prompts during package install
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install runtime packages (s6-overlay comes from GitHub releases, not apt)
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends \
+        clamav-daemon \
+        clamav-freshclam \
+        rspamd \
+        libmagic1 \
+        libssl3 \
+        ca-certificates \
+        tzdata \
+        wget \
+        xz-utils \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install s6-overlay v3 from GitHub releases (not in Ubuntu apt)
+ARG S6_VERSION=3.2.0.2
+RUN set -eux; \
+    ARCH=$(uname -m); \
+    wget -qO /tmp/s6-noarch.tar.xz \
+      "https://github.com/just-containers/s6-overlay/releases/download/v${S6_VERSION}/s6-overlay-noarch.tar.xz"; \
+    wget -qO /tmp/s6-arch.tar.xz \
+      "https://github.com/just-containers/s6-overlay/releases/download/v${S6_VERSION}/s6-overlay-${ARCH}.tar.xz"; \
+    tar -C / -Jxpf /tmp/s6-noarch.tar.xz; \
+    tar -C / -Jxpf /tmp/s6-arch.tar.xz; \
+    rm /tmp/s6-noarch.tar.xz /tmp/s6-arch.tar.xz
+
+# Copy the statically-compiled mailhook binary
+COPY --from=builder /out/mailhook /usr/local/bin/mailhook
+
+# ── s6 service definitions ────────────────────────────────────────────────────
+# s6-overlay v3 layout: /etc/s6-overlay/s6-rc.d/<name>/
+
+# freshclam (one-shot: downloads the DB then exits; clamd waits for it)
+COPY packaging/allinone/s6/freshclam-init/type \
+                                    /etc/s6-overlay/s6-rc.d/freshclam-init/type
+COPY packaging/allinone/s6/freshclam-init/up \
+                                    /etc/s6-overlay/s6-rc.d/freshclam-init/up
+
+# clamd longrun service
+COPY packaging/allinone/s6/clamd/type    /etc/s6-overlay/s6-rc.d/clamd/type
+COPY packaging/allinone/s6/clamd/run     /etc/s6-overlay/s6-rc.d/clamd/run
+COPY packaging/allinone/s6/clamd/dependencies.d/freshclam-init \
+                                    /etc/s6-overlay/s6-rc.d/clamd/dependencies.d/freshclam-init
+
+# rspamd longrun service
+COPY packaging/allinone/s6/rspamd/type   /etc/s6-overlay/s6-rc.d/rspamd/type
+COPY packaging/allinone/s6/rspamd/run    /etc/s6-overlay/s6-rc.d/rspamd/run
+
+# mailhook longrun service (depends on clamd + rspamd)
+COPY packaging/allinone/s6/mailhook/type /etc/s6-overlay/s6-rc.d/mailhook/type
+COPY packaging/allinone/s6/mailhook/run  /etc/s6-overlay/s6-rc.d/mailhook/run
+COPY packaging/allinone/s6/mailhook/dependencies.d/clamd \
+                                    /etc/s6-overlay/s6-rc.d/mailhook/dependencies.d/clamd
+COPY packaging/allinone/s6/mailhook/dependencies.d/rspamd \
+                                    /etc/s6-overlay/s6-rc.d/mailhook/dependencies.d/rspamd
+
+# Bundle for s6 rc to know what to start
+COPY packaging/allinone/s6/user/contents.d/ \
+                                    /etc/s6-overlay/s6-rc.d/user/contents.d/
+
+# Rspamd config (low-volume, Bayes SQLite backend)
+COPY rspamd-config/local.d/ /etc/rspamd/local.d/
+
+# Patch main clamd.conf to add TCP socket (clamd ignores conf.d drop-ins; it only reads its main config).
+# Append after the existing LocalSocket line so TCP is available alongside the Unix socket.
+RUN sed -i '/^LocalSocket \/var\/run\/clamav\/clamd.ctl/a TCPSocket 3310\nTCPAddr 127.0.0.1' \
+      /etc/clamav/clamd.conf && \
+    echo '\n# Docker: log to stdout' >> /etc/clamav/clamd.conf && \
+    echo 'LogFile /dev/stdout' >> /etc/clamav/clamd.conf && \
+    echo 'LogSyslog no' >> /etc/clamav/clamd.conf
+
+# s6 run/up scripts must be executable (--chmod requires BuildKit; use RUN instead)
+RUN find /etc/s6-overlay/s6-rc.d -name "run" -o -name "up" | xargs chmod 755
+
+# Runtime directories
+# /var/run/clamav is normally created by systemd tmpfiles.d — create it explicitly here.
+RUN install -d -m 750 -o clamav -g clamav /var/run/clamav \
+    && install -d -m 755 /var/lib/mailhook/emls /var/lib/mailhook/rules \
+                          /var/cache/mailhook/feeds \
+    && useradd --system --no-create-home --shell /usr/sbin/nologin \
+               --user-group mailhook \
+    && chown -R mailhook:mailhook /var/lib/mailhook /var/cache/mailhook
+
+# ── Ports / volumes ───────────────────────────────────────────────────────────
+EXPOSE 8080
+
+VOLUME ["/var/lib/mailhook", "/var/cache/mailhook/feeds", "/rules"]
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=5 \
+    CMD wget -qO- http://localhost:8080/healthz || exit 1
+
+# s6-overlay is the init system (PID 1)
+ENTRYPOINT ["/init"]

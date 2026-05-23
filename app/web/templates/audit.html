@@ -1,0 +1,74 @@
+{{define "audit.html"}}<!DOCTYPE html>
+<html lang="en">
+<head>{{template "head" .}}</head>
+<body class="bg-gray-100 text-gray-900 min-h-screen dark:bg-gray-900 dark:text-gray-100">
+{{template "nav" .}}
+<main class="max-w-7xl mx-auto px-4 py-6">
+  <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-5">Audit Log <span class="text-gray-400 font-normal text-base">({{.Total}} entries)</span></h1>
+
+  <form method="GET" class="flex flex-wrap gap-2 mb-4 items-end">
+    <select name="action" class="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <option value="">All actions</option>
+      {{range .ActionOptions}}
+      <option value="{{.}}" {{if eq (index $.Filters "action") .}}selected{{end}}>{{.}}</option>
+      {{end}}
+    </select>
+    <input type="date" name="from_date" value="{{index .Filters "from_date"}}"
+      class="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <input type="date" name="to_date" value="{{index .Filters "to_date"}}"
+      class="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <button type="submit" class="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">Filter</button>
+    <a href="/audit" class="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 px-3 py-2">Clear</a>
+  </form>
+
+  <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
+    <table class="min-w-full text-sm">
+      <thead class="bg-gray-50 dark:bg-gray-700 text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+        <tr>
+          <th class="px-4 py-3 text-left">Time</th>
+          <th class="px-4 py-3 text-left">Action</th>
+          <th class="px-4 py-3 text-left">From</th>
+          <th class="px-4 py-3 text-left">Subject</th>
+          <th class="px-4 py-3 text-left">Actor</th>
+          <th class="px-4 py-3 text-left">Note</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-50 dark:divide-gray-700">
+        {{range .Rows}}
+        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+          <td class="px-4 py-3 text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">{{.CreatedAt.Format "Jan 02 15:04"}}</td>
+          <td class="px-4 py-3">
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+              {{if eq .Action "RELEASE"}}bg-blue-100 text-blue-800
+              {{else if eq .Action "DELETE"}}bg-red-100 text-red-800
+              {{else if eq .Action "LEARN_HAM"}}bg-teal-100 text-teal-800
+              {{else if eq .Action "LEARN_SPAM"}}bg-amber-100 text-amber-800
+              {{else if eq .Action "RESCAN"}}bg-gray-100 text-gray-700
+              {{else}}bg-orange-100 text-orange-800{{end}}">
+              {{.Action}}
+            </span>
+          </td>
+          <td class="px-4 py-3 font-mono text-xs text-gray-600 dark:text-gray-300 truncate max-w-xs">{{.From}}</td>
+          <td class="px-4 py-3 text-gray-700 dark:text-gray-300 truncate max-w-sm">{{.Subject}}</td>
+          <td class="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">{{.Actor}}</td>
+          <td class="px-4 py-3 text-xs text-gray-400 dark:text-gray-500">{{.Note}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="6" class="px-4 py-10 text-center text-gray-400 text-sm">No audit log entries.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{if gt .Pages 1}}
+    <div class="px-5 py-4 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between text-sm">
+      <span class="text-gray-500 dark:text-gray-400">Page {{.Page}} of {{.Pages}}</span>
+      <div class="flex gap-2">
+        {{if gt .Page 1}}<a href="?page={{sub .Page 1}}" class="px-3 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700">Prev</a>{{end}}
+        {{if lt .Page .Pages}}<a href="?page={{add .Page 1}}" class="px-3 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700">Next</a>{{end}}
+      </div>
+    </div>
+    {{end}}
+  </div>
+</main>
+{{template "scripts" .}}
+</body>
+</html>{{end}}

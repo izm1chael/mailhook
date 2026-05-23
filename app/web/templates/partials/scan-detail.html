@@ -1,0 +1,210 @@
+{{define "scan-detail"}}
+<!-- Slide-out panel backdrop + drawer controlled by detailOpen/detailScan in parent x-data -->
+<div x-show="detailOpen" x-cloak class="fixed inset-0 z-40 flex" @keydown.escape.window="closeDetail">
+  <div class="fixed inset-0 bg-black/40" @click="closeDetail"></div>
+  <div class="relative ml-auto w-full max-w-2xl bg-white dark:bg-gray-800 h-full shadow-2xl flex flex-col z-50 overflow-y-auto">
+
+    <!-- Loading state -->
+    <div x-show="detailLoading" class="flex-1 flex items-center justify-center">
+      <div class="text-gray-400">Loading...</div>
+    </div>
+
+    <!-- Content -->
+    <template x-if="isDetailReady">
+      <div class="flex flex-col h-full">
+
+        <!-- Header -->
+        <div class="flex items-start justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-800 z-10">
+          <div class="flex-1 min-w-0">
+            <h3 class="font-semibold text-gray-900 dark:text-gray-100 truncate" x-text="subjectLabel"></h3>
+            <p class="text-xs text-gray-400 mt-0.5" x-text="detailScan.From"></p>
+          </div>
+          <button @click="closeDetail" class="ml-4 text-gray-400 hover:text-gray-600 text-xl leading-none shrink-0">&#215;</button>
+        </div>
+
+        <!-- Verdict banner -->
+        <div class="px-6 py-4 border-b border-gray-100">
+          <div class="flex items-center gap-3 p-4 rounded-xl" :class="verdictBannerClass">
+            <span class="text-2xl" x-text="verdictEmojiVal"></span>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="font-bold text-sm" :class="verdictBadgeClass" x-text="detailScan.Verdict"></span>
+                <span class="text-xs text-gray-500" x-text="confidenceLabel"></span>
+              </div>
+              <p class="text-sm text-gray-700 mt-0.5" x-text="detailScan.VerdictReason"></p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Email metadata -->
+        <div class="px-6 py-4 border-b border-gray-100 grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <span class="text-xs text-gray-400 uppercase tracking-wide block">From</span>
+            <span class="text-gray-700 font-mono text-xs break-all" x-text="detailScan.From"></span>
+          </div>
+          <div>
+            <span class="text-xs text-gray-400 uppercase tracking-wide block">To</span>
+            <span class="text-gray-700 font-mono text-xs break-all" x-text="detailScan.To"></span>
+          </div>
+          <div>
+            <span class="text-xs text-gray-400 uppercase tracking-wide block">Received</span>
+            <span class="text-gray-600 text-xs" x-text="receivedLabel"></span>
+          </div>
+          <div>
+            <span class="text-xs text-gray-400 uppercase tracking-wide block">Account</span>
+            <span class="text-gray-600 text-xs" x-text="detailScan.AccountName"></span>
+          </div>
+          <div>
+            <span class="text-xs text-gray-400 uppercase tracking-wide block">Sending IP</span>
+            <span class="text-gray-600 font-mono text-xs" x-text="sendingIPLabel"></span>
+          </div>
+          <div>
+            <span class="text-xs text-gray-400 uppercase tracking-wide block">Size</span>
+            <span class="text-gray-600 text-xs" x-text="sizeLabel"></span>
+          </div>
+        </div>
+
+        <!-- Auth results -->
+        <div class="px-6 py-4 border-b border-gray-100">
+          <h4 class="text-xs text-gray-400 uppercase tracking-wide mb-2">Email authentication</h4>
+          <div class="flex gap-2">
+            <template x-for="item in authItemsList" :key="item.label">
+              <div class="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium" :class="item.cls">
+                <span x-text="item.label"></span>
+                <span x-text="item.display" class="opacity-70"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Scanner results -->
+        <div class="px-6 py-4 border-b border-gray-100">
+          <h4 class="text-xs text-gray-400 uppercase tracking-wide mb-3">Scanner results</h4>
+          <div class="space-y-2">
+
+            <!-- Rspamd -->
+            <div class="flex items-center justify-between py-2 border-b border-gray-50">
+              <span class="text-sm text-gray-600 font-medium w-28">Rspamd</span>
+              <span class="flex-1 text-sm font-mono"
+                :class="rspamdScoreClass"
+                x-text="rspamdScoreText"></span>
+            </div>
+
+            <!-- ClamAV -->
+            <div class="flex items-center justify-between py-2 border-b border-gray-50">
+              <span class="text-sm text-gray-600 font-medium w-28">ClamAV</span>
+              <span class="flex-1 text-sm font-mono"
+                :class="clamavCssClass"
+                x-text="clamavStatusLabel"></span>
+            </div>
+
+            <!-- YARA -->
+            <div class="flex items-center justify-between py-2 border-b border-gray-50">
+              <span class="text-sm text-gray-600 font-medium w-28">YARA</span>
+              <span class="flex-1 text-sm"
+                :class="yaraScoreClass"
+                x-text="yaraScoreText"></span>
+            </div>
+
+            <!-- URL hits -->
+            <div class="flex items-start justify-between py-2 border-b border-gray-50">
+              <span class="text-sm text-gray-600 font-medium w-28 shrink-0">URL check</span>
+              <template x-if="urlHitsEmpty">
+                <span class="text-sm text-gray-400">No hits</span>
+              </template>
+              <template x-if="urlHitsPresent">
+                <div class="flex-1 space-y-1">
+                  <template x-for="hit in urlHitsItems" :key="hit.url">
+                    <div class="text-xs font-mono text-red-700 break-all" x-text="hit.display"></div>
+                  </template>
+                </div>
+              </template>
+            </div>
+
+            <!-- IP Reputation -->
+            <div class="flex items-center justify-between py-2 border-b border-gray-50">
+              <span class="text-sm text-gray-600 font-medium w-28">IP Rep</span>
+              <template x-if="ipRepEmpty">
+                <span class="text-sm text-gray-400" x-text="ipNoRepLabel"></span>
+              </template>
+              <template x-if="ipRepPresent">
+                <span class="flex-1 text-sm font-mono"
+                  :class="ipAbuseScoreClass"
+                  x-text="ipAbuseScoreText"></span>
+              </template>
+            </div>
+
+            <!-- VirusTotal -->
+            <div class="flex items-center justify-between py-2">
+              <span class="text-sm text-gray-600 font-medium w-28">VirusTotal</span>
+              <template x-if="vtResultsEmpty">
+                <span class="text-sm text-gray-400">No API key / no attachments</span>
+              </template>
+              <template x-if="vtResultsPresent">
+                <div class="flex-1 space-y-1">
+                  <template x-for="r in vtItems" :key="r.sha256">
+                    <div class="text-xs" :class="r.cls" x-text="r.display"></div>
+                  </template>
+                </div>
+              </template>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Attachments -->
+        <div class="px-6 py-4 border-b border-gray-100">
+          <h4 class="text-xs text-gray-400 uppercase tracking-wide mb-2">Attachments</h4>
+          <template x-if="noAttachments">
+            <p class="text-sm text-gray-400">No attachments</p>
+          </template>
+          <template x-if="hasAttachmentsVal">
+            <div class="space-y-1">
+              <template x-for="a in attachmentsItems" :key="a.SHA256">
+                <div class="flex items-center justify-between text-xs py-1 border-b border-gray-50 last:border-0"
+                     :class="a.cls">
+                  <span class="font-mono truncate max-w-[200px]" x-text="a.filename"></span>
+                  <span class="text-gray-400 ml-2 shrink-0" x-text="a.sizeLabel"></span>
+                  <span class="ml-2 shrink-0" :class="a.vtCls" x-text="a.vtDisplay"></span>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
+
+        <!-- Actions -->
+        <div class="px-6 py-4 flex flex-wrap gap-2 sticky bottom-0 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700">
+          <template x-if="isQuarantined">
+            <button @click="releaseFromDetail"
+              class="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors">
+              Release to inbox
+            </button>
+          </template>
+          <button @click="deleteFromDetail"
+            class="text-sm bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg transition-colors">
+            Delete
+          </button>
+          <a :href="emlHref" target="_blank"
+            class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">
+            Download EML
+          </a>
+          <button @click="togglePreview"
+            class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors"
+            x-text="previewToggleLabel"></button>
+          <button @click="rescanFromDetail"
+            class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">
+            Re-scan
+          </button>
+        </div>
+
+        <div x-show="previewOpen" x-cloak class="border-t border-gray-100">
+          <iframe :src="previewSrc"
+            sandbox
+            class="w-full border-0 h-[400px]"></iframe>
+        </div>
+
+      </div>
+    </template>
+  </div>
+</div>
+{{end}}

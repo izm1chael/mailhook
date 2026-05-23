@@ -1,0 +1,15 @@
+# Snyk (https://snyk.io) policy file
+version: v1.25.0
+
+ignore:
+  # The Secure attribute on session and CSRF cookies is controlled by the
+  # `secureCookies` field on Middleware, which is set to `true` by default
+  # (MAILHOOK_INSECURE_COOKIES must be explicitly set to disable it for local
+  # HTTP development). Snyk's static analysis cannot prove the variable is true
+  # at runtime — this is a false positive.
+  SNYK-CC-TF-0:
+    - auth/middleware.go:
+        reason: >
+          Secure flag is controlled by m.secureCookies which defaults to true
+          (opt-out via MAILHOOK_INSECURE_COOKIES=true for dev only).
+        expires: 2027-01-01T00:00:00.000Z

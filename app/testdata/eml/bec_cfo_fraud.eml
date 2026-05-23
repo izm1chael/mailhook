@@ -1,0 +1,37 @@
+From: Michael Chen <cfo@acmecorp-finance.com>
+To: Sarah Williams <s.williams@mailhook.test>
+Subject: Urgent payment needed - confidential
+Date: Thu, 15 Feb 2024 09:12:43 +0000
+Message-ID: <bec-test-001@acmecorp-finance.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.mailhook.test;
+  spf=softfail smtp.mailfrom=acmecorp-finance.com;
+  dkim=fail header.d=acmecorp-finance.com;
+  dmarc=fail header.from=acmecorp-finance.com
+Received: from mail-wr1-f41.google.com ([209.85.221.41])
+  by mx.mailhook.test with ESMTPS; Thu, 15 Feb 2024 09:12:44 +0000
+
+Sarah,
+
+I need you to process an urgent wire transfer. We are in the middle of a
+confidential acquisition and I cannot discuss this over the phone right now.
+
+Please transfer $87,500 to the following account immediately:
+
+  Bank: First National Bank
+  Account Name: Meridian Holdings LLC
+  Account Number: 4827361900
+  Routing Number: 021000021
+  Reference: ACQ-2024-CONF
+
+This must be completed today before 3pm. Do not discuss this with anyone
+else in the office as the deal is still under NDA. I will explain everything
+when I am back from the board meeting.
+
+Please confirm once the transfer has been initiated.
+
+Regards,
+Michael Chen
+Chief Financial Officer
+ACME Corporation

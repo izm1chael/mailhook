@@ -1,0 +1,762 @@
+{{define "settings.html"}}<!DOCTYPE html>
+<html lang="en">
+<head>{{template "head" .}}</head>
+<body class="bg-gray-100 text-gray-900 min-h-screen dark:bg-gray-900 dark:text-gray-100">
+{{template "nav" .}}
+<main class="max-w-4xl mx-auto px-4 py-6 space-y-5">
+
+  <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-100">Settings</h1>
+
+  <!-- 1. Integration Status -->
+  <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-5" x-data="integrationStatus">
+    <h2 class="font-semibold text-gray-800 dark:text-gray-200 mb-4">Integration status</h2>
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3" x-show="loaded" x-cloak>
+      <template x-for="card in cards" :key="card.name">
+        <div class="rounded-lg border p-3 flex flex-col gap-1"
+          :class="card.cls">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full flex-shrink-0"
+              :class="card.dotCls"></span>
+            <span class="text-sm font-medium text-gray-800" x-text="card.name"></span>
+          </div>
+          <span class="text-xs text-gray-500 ml-4" x-text="card.detail"></span>
+        </div>
+      </template>
+    </div>
+    <p x-show="notLoaded" class="text-sm text-gray-400">Loading...</p>
+    <p x-show="loadErr" x-text="loadErr" class="text-sm text-red-500 mt-2" x-cloak></p>
+  </div>
+
+  <!-- 2. Scanners -->
+  <div class="bg-white rounded-xl shadow-sm p-5" x-data="scannerToggles">
+    <h2 class="font-semibold text-gray-800 mb-1">Scanners</h2>
+    <p class="text-sm text-gray-500 mb-4">Enable or disable individual scanning engines. Disabled scanners return <code class="bg-gray-100 px-1 rounded">skip</code> and do not affect verdicts. Changes take effect immediately.</p>
+    <div class="space-y-3">
+      {{range .Scanners}}
+      <div class="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+        <div>
+          <span class="text-sm font-medium text-gray-800 capitalize">{{.Name}}</span>
+          <span class="ml-2 text-xs text-gray-400">scanner_{{.Name}}_enabled</span>
+        </div>
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="checkbox" class="sr-only peer"
+            data-scanner="{{.Name}}"
+            {{if .Enabled}}checked{{end}}
+            @change="toggleFromEvent">
+          <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-gray-900 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+        </label>
+      </div>
+      {{end}}
+    </div>
+    <p x-show="flash" x-text="flash" class="mt-3 text-sm text-green-600" x-cloak></p>
+    <p x-show="err" x-text="err" class="mt-3 text-sm text-red-600" x-cloak></p>
+  </div>
+
+  <!-- 3. Verdict Thresholds -->
+  <div class="bg-white rounded-xl shadow-sm p-5" x-data="thresholds" data-spam="{{.SpamScore}}" data-reject="{{.RejectScore}}">
+    <h2 class="font-semibold text-gray-800 mb-1">Verdict thresholds</h2>
+    <p class="text-sm text-gray-500 mb-4">Rspamd score at which emails are quarantined or deleted. Changes apply immediately and persist across restarts.</p>
+    <div class="grid grid-cols-2 gap-4 mb-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Spam quarantine score</label>
+        <input type="number" step="0.5" min="1" max="30" x-model.number="spam"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+        <p class="text-xs text-gray-400 mt-1">Scores above this go to quarantine.</p>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Reject score</label>
+        <input type="number" step="0.5" min="1" max="50" x-model.number="reject"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+        <p class="text-xs text-gray-400 mt-1">Scores above this are deleted.</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <button @click="save" :disabled="saving"
+        class="px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700 disabled:opacity-50">
+        <span x-text="saveLabel"></span>
+      </button>
+      <span x-show="flash" x-text="flash" class="text-sm text-green-600" x-cloak></span>
+      <span x-show="err" x-text="err" class="text-sm text-red-600" x-cloak></span>
+    </div>
+  </div>
+
+  <!-- 4. API Keys -->
+  <div class="bg-white rounded-xl shadow-sm p-5" x-data="apiKeys"
+    data-vt-ok="{{if .VTConfigured}}true{{else}}false{{end}}"
+    data-ip-ok="{{if .IPRepConfigured}}true{{else}}false{{end}}">
+    <h2 class="font-semibold text-gray-800 mb-1">API keys</h2>
+    <p class="text-sm text-gray-500 mb-4">Stored in the database and applied immediately. Leave a field blank to keep the existing key.</p>
+    <div class="space-y-4 mb-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">
+          VirusTotal API key
+          <span x-cloak class="ml-2 text-xs font-normal px-1.5 py-0.5 rounded"
+            :class="vtStatusClass"
+            x-text="vtStatusLabel"></span>
+        </label>
+        <input type="password" x-model="vtKey" placeholder="Enter new key to update..."
+          autocomplete="new-password"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+        <p class="text-xs text-gray-400 mt-1">Attachment hash lookups. Free tier: 4 req/min. Env: MAILHOOK_VT_API_KEY</p>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">
+          AbuseIPDB API key
+          <span x-cloak class="ml-2 text-xs font-normal px-1.5 py-0.5 rounded"
+            :class="ipStatusClass"
+            x-text="ipStatusLabel"></span>
+        </label>
+        <input type="password" x-model="ipKey" placeholder="Enter new key to update..."
+          autocomplete="new-password"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+        <p class="text-xs text-gray-400 mt-1">Sender IP reputation scoring. Env: MAILHOOK_ABUSEIPDB_KEY</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <button @click="save" :disabled="saving"
+        class="px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700 disabled:opacity-50">
+        <span x-text="saveLabel"></span>
+      </button>
+      <span x-show="flash" x-text="flash" class="text-sm text-green-600" x-cloak></span>
+      <span x-show="err" x-text="err" class="text-sm text-red-600" x-cloak></span>
+    </div>
+  </div>
+
+  <!-- 5. Notifications -->
+  <div class="bg-white rounded-xl shadow-sm p-5" x-data="notifications"
+    data-url="{{.NtfyURL}}" data-topic="{{.NtfyTopic}}">
+    <h2 class="font-semibold text-gray-800 mb-1">Push notifications</h2>
+    <p class="text-sm text-gray-500 mb-4">Send alerts via ntfy.sh or a self-hosted ntfy server. Leave URL blank to disable.</p>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Server URL</label>
+        <input type="url" x-model="url" placeholder="https://ntfy.sh"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+        <p class="text-xs text-gray-400 mt-1">Env: MAILHOOK_NTFY_URL</p>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Topic</label>
+        <input type="text" x-model="topic" placeholder="mailhook"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+        <p class="text-xs text-gray-400 mt-1">Env: MAILHOOK_NTFY_TOPIC</p>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Access token</label>
+        <input type="password" x-model="token" placeholder="Leave blank to keep existing..."
+          autocomplete="new-password"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+        <p class="text-xs text-gray-400 mt-1">Env: MAILHOOK_NTFY_TOKEN</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <button @click="save" :disabled="saving"
+        class="px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700 disabled:opacity-50">
+        <span x-text="saveLabel"></span>
+      </button>
+      <button @click="sendTest" :disabled="testing"
+        class="px-4 py-2 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-50">
+        <span x-text="testLabel"></span>
+      </button>
+      <span x-show="flash" x-text="flash" class="text-sm text-green-600" x-cloak></span>
+      <span x-show="err" x-text="err" class="text-sm text-red-600" x-cloak></span>
+    </div>
+  </div>
+
+  <!-- 5b. Webhook -->
+  <div class="bg-white rounded-xl shadow-sm p-5" x-data="webhookSettings">
+    <h2 class="font-semibold text-gray-800 mb-1">Outbound webhook</h2>
+    <p class="text-sm text-gray-500 mb-4">POST a JSON payload to an external URL when a threat matches. Leave URL blank to disable.</p>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+      <div class="sm:col-span-2">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Webhook URL</label>
+        <input type="url" x-model="url" placeholder="https://example.com/webhook"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Verdicts (comma-separated)</label>
+        <input type="text" x-model="verdicts" placeholder="MALWARE,PHISH"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+        <p class="text-xs text-gray-400 mt-1">Blank defaults to MALWARE,PHISH</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <button @click="save" :disabled="saving"
+        class="px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700 disabled:opacity-50">
+        <span x-text="saveLabel"></span>
+      </button>
+      <span x-show="flash" x-text="flash" class="text-sm text-green-600" x-cloak></span>
+      <span x-show="err" x-text="err" class="text-sm text-red-600" x-cloak></span>
+    </div>
+  </div>
+
+  <!-- 5c. Security / Password -->
+  <div class="bg-white rounded-xl shadow-sm p-5" x-data="passwordChange">
+    <h2 class="font-semibold text-gray-800 mb-1">Security</h2>
+    <p class="text-sm text-gray-500 mb-4">Change the admin password. Minimum 12 characters.</p>
+    <div class="space-y-3 max-w-sm mb-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Current password</label>
+        <input type="password" x-model="current" autocomplete="current-password"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">New password</label>
+        <input type="password" x-model="newPw" autocomplete="new-password"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Confirm new password</label>
+        <input type="password" x-model="confirm" autocomplete="new-password"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <button @click="save" :disabled="saving"
+        class="px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700 disabled:opacity-50">
+        <span x-text="saveLabel"></span>
+      </button>
+      <span x-show="flash" x-text="flash" class="text-sm text-green-600" x-cloak></span>
+      <span x-show="err" x-text="err" class="text-sm text-red-600" x-cloak></span>
+    </div>
+  </div>
+
+  <!-- 6. IMAP Accounts -->
+  <div class="bg-white rounded-xl shadow-sm p-5" x-data="imapAccounts">
+    <div class="flex items-center justify-between mb-1">
+      <h2 class="font-semibold text-gray-800">IMAP accounts</h2>
+      <button @click="openAdd"
+        class="px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg hover:bg-gray-700">
+        + Add account
+      </button>
+    </div>
+    <p class="text-sm text-gray-500 mb-4">Add accounts here or via <code class="bg-gray-100 px-1 rounded">config.yaml</code>. Changes take effect immediately — no restart required.</p>
+
+    <!-- Account list -->
+    <div class="space-y-2">
+      <template x-for="a in accounts" :key="a.name">
+        <div class="flex items-center gap-3 py-2 border-b border-gray-100 last:border-0 text-sm">
+          <span class="flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full flex-shrink-0"
+              :class="a.statusDot"></span>
+            <span class="font-medium text-gray-800 w-24 truncate" x-text="a.name"></span>
+          </span>
+          <span class="font-mono text-gray-600 truncate" x-text="a.user"></span>
+          <span class="text-gray-400" x-text="a.hostPort"></span>
+          <span class="text-gray-400 hidden sm:inline" x-text="a.mailboxRoute"></span>
+          <div class="ml-auto flex gap-2">
+            <button :data-idx="$index" @click="openEditByIdx"
+              class="text-xs px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 text-gray-600">Edit</button>
+            <button :data-idx="$index" @click="removeByIdx"
+              class="text-xs px-2 py-1 border border-red-200 rounded hover:bg-red-50 text-red-600">Delete</button>
+          </div>
+        </div>
+      </template>
+      <p x-show="accountsEmpty" class="text-sm text-gray-400">No accounts configured.</p>
+      <p x-show="loading" class="text-sm text-gray-400">Loading...</p>
+    </div>
+
+    <p x-show="err" x-text="err" class="mt-3 text-sm text-red-600" x-cloak></p>
+
+    <!-- Add / Edit modal -->
+    <div x-show="showForm" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40" x-cloak>
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6 space-y-4" @click.stop>
+        <h3 class="font-semibold text-gray-900" x-text="formTitle"></h3>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="col-span-2">
+            <label class="block text-xs font-medium text-gray-600 mb-1">Account name <span x-show="noEditName" class="text-gray-400">(unique, no spaces)</span></label>
+            <input type="text" x-model="form.name" :disabled="hasEditName" placeholder="work"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:bg-gray-50">
+          </div>
+          <div class="col-span-2 sm:col-span-1">
+            <label class="block text-xs font-medium text-gray-600 mb-1">Host</label>
+            <input type="text" x-model="form.host" placeholder="imap.example.com"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">Port</label>
+            <input type="number" x-model.number="form.port" placeholder="993"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs font-medium text-gray-600 mb-1">Username</label>
+            <input type="text" x-model="form.user" autocomplete="off" placeholder="user@example.com"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs font-medium text-gray-600 mb-1">
+              Password
+              <span x-show="hasEditName" class="text-gray-400">(leave blank to keep current)</span>
+            </label>
+            <input type="password" x-model="form.pass" autocomplete="new-password" placeholder="••••••••"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">Mailbox</label>
+            <input type="text" x-model="form.mailbox" placeholder="INBOX"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">Quarantine folder</label>
+            <input type="text" x-model="form.quarantine" placeholder="Quarantine"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+          </div>
+          <div class="col-span-2">
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" x-model="form.tls_skip_verify" class="w-4 h-4 rounded border-gray-300 text-gray-900">
+              <span class="text-xs font-medium text-gray-600">Disable TLS certificate verification</span>
+            </label>
+            <p x-show="form.tls_skip_verify" class="mt-1 text-xs text-red-600 font-medium" x-cloak>
+              Warning: disabling TLS verification exposes IMAP credentials to man-in-the-middle attacks. Only enable on trusted private networks.
+            </p>
+          </div>
+        </div>
+        <div class="flex items-center gap-3 pt-1">
+          <button @click="save" :disabled="saving"
+            class="px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700 disabled:opacity-50">
+            <span x-text="saveButtonLabel"></span>
+          </button>
+          <button @click="testConn" :disabled="testing"
+            class="px-4 py-2 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-50">
+            <span x-text="testLabel"></span>
+          </button>
+          <button @click="cancelForm" class="text-sm text-gray-400 hover:text-gray-700 ml-auto">Cancel</button>
+        </div>
+        <p x-show="formFlash" x-text="formFlash" class="text-sm text-green-600" x-cloak></p>
+        <p x-show="formErr" x-text="formErr" class="text-sm text-red-600" x-cloak></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. Scanner Endpoints -->
+  <div class="bg-white rounded-xl shadow-sm p-5" x-data="endpoints"
+    data-rspamd="{{.RspamdURL}}" data-clamav="{{.ClamAVAddr}}" data-yara-dir="{{.YARARulesDir}}">
+    <h2 class="font-semibold text-gray-800 mb-1">Scanner endpoints</h2>
+    <p class="text-sm text-gray-500 mb-4">Update scanner addresses without restarting. Env vars are the default — UI values override and persist in the database.</p>
+    <div class="space-y-4 mb-4">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="sm:col-span-2">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Rspamd URL</label>
+          <input type="text" x-model="rspamd" placeholder="http://rspamd:11333"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gray-900">
+          <p class="text-xs text-gray-400 mt-1">Env: MAILHOOK_RSPAMD_URL</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">ClamAV address</label>
+          <input type="text" x-model="clamav" placeholder="clamav:3310"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gray-900">
+          <p class="text-xs text-gray-400 mt-1">Env: MAILHOOK_CLAMAV_ADDR</p>
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">YARA rules directory</label>
+        <input type="text" x-model="yaraDir" placeholder="/rules"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gray-900">
+        <p class="text-xs text-gray-400 mt-1">Env: MAILHOOK_YARA_RULES_DIR — changing this reloads rules immediately</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <button @click="save" :disabled="saving"
+        class="px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700 disabled:opacity-50">
+        <span x-text="saveLabel"></span>
+      </button>
+      <button @click="reloadYARA" :disabled="reloading"
+        class="px-4 py-2 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-50">
+        <span x-text="reloadLabel"></span>
+      </button>
+      <span x-show="flash" x-text="flash" class="text-sm text-green-600" x-cloak></span>
+      <span x-show="err" x-text="err" class="text-sm text-red-600" x-cloak></span>
+    </div>
+    <dl class="mt-4 text-xs text-gray-400 space-y-1">
+      <div class="flex gap-3"><dt class="w-16 flex-shrink-0">Data dir</dt><dd class="font-mono">{{.DataDir}}</dd><dd class="ml-2">MAILHOOK_DATA_DIR (restart to change)</dd></div>
+    </dl>
+  </div>
+
+  <!-- 8. Custom Threat Feed -->
+  <div class="bg-white rounded-xl shadow-sm p-5" x-data="customFeed">
+    <h2 class="font-semibold text-gray-800 mb-1">Custom threat feed</h2>
+    <p class="text-sm text-gray-500 mb-4">Add domains or URLs to block in addition to the public feeds.</p>
+    <div class="flex gap-2 mb-4">
+      <input type="text" x-model="entry" placeholder="evil.com or https://evil.com/phish"
+        class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+      <select x-model="entryType" class="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+        <option value="domain">domain</option>
+        <option value="url">url</option>
+      </select>
+      <button @click="add" :disabled="adding"
+        class="px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700 disabled:opacity-50">
+        <span x-text="addLabel"></span>
+      </button>
+    </div>
+    <div class="space-y-1">
+      <template x-for="e in entries" :key="e.ID">
+        <div class="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-0 text-sm">
+          <span class="font-mono text-gray-700 truncate" x-text="e.Entry"></span>
+          <span class="text-xs text-gray-400 ml-2" x-text="e.EntryType"></span>
+          <button :data-entry-id="e.ID" @click="removeFromEvent" class="ml-3 text-xs text-red-500 hover:text-red-700">Remove</button>
+        </div>
+      </template>
+      <p x-show="feedEmpty" class="text-sm text-gray-400">No custom entries.</p>
+      <p x-show="loading" class="text-sm text-gray-400">Loading...</p>
+    </div>
+    <p x-show="err" x-text="err" class="mt-2 text-sm text-red-600" x-cloak></p>
+  </div>
+
+  <!-- 9. Maintenance -->
+  <div class="bg-white rounded-xl shadow-sm p-5">
+    <h2 class="font-semibold text-gray-800 mb-1">Maintenance</h2>
+    <p class="text-sm text-gray-500 mb-4">Trigger background operations that return immediately.</p>
+    <div x-data="maintenancePanel" class="flex items-center gap-3">
+      <button @click="refresh" :disabled="loading"
+        class="px-4 py-2 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-50">
+        <span x-text="refreshLabel"></span>
+      </button>
+      <span x-show="flash" x-text="flash" class="text-sm text-green-600" x-cloak></span>
+      <span x-show="err" x-text="err" class="text-sm text-red-600" x-cloak></span>
+    </div>
+  </div>
+
+</main>
+{{template "scripts" .}}
+<script nonce="{{.Nonce}}">
+document.addEventListener('alpine:init', () => {
+Alpine.data('integrationStatus', () => ({
+  loaded: false, loadErr: '', cards: [],
+  get notLoaded() { return !this.loaded; },
+  init() {
+    fetch('/health').then(r => r.json()).then(d => {
+      const c = d.components || {};
+      const mkCard = (name, ok, detail) => ({
+        name, ok, detail,
+        cls: ok ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50',
+        dotCls: ok ? 'bg-green-500' : 'bg-red-400'
+      });
+      const cards = [];
+      cards.push(mkCard('Database', c.database?.status==='healthy', c.database?.error || 'healthy'));
+      cards.push(mkCard('Rspamd', c.rspamd?.status==='healthy', c.rspamd?.error ? 'unreachable' : 'healthy'));
+      cards.push(mkCard('ClamAV', c.clamav?.status==='healthy', c.clamav?.error ? 'unreachable' : 'healthy'));
+      cards.push(mkCard('YARA', c.yara?.status==='healthy', (c.yara?.rule_count || 0)+' rules'));
+      const feeds = c.feeds?.counts || {};
+      for (const [feed, count] of Object.entries(feeds)) {
+        cards.push(mkCard(feed.charAt(0).toUpperCase()+feed.slice(1), count > 0, count.toLocaleString()+' entries'));
+      }
+      if (Object.keys(feeds).length === 0) {
+        cards.push(mkCard('Feeds', false, 'no data'));
+      }
+      this.cards = cards;
+      this.loaded = true;
+    }).catch(e => { this.loadErr = 'Failed: '+e.message; this.loaded = true; });
+  }
+}))
+
+Alpine.data('scannerToggles', () => ({
+  flash: '', err: '',
+  toggleFromEvent(event) { this.toggle(event.currentTarget.dataset.scanner, event.target.checked); },
+  async toggle(name, enabled) {
+    this.flash = ''; this.err = '';
+    try {
+      const r = await fetch('/api/settings/scanners', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','X-CSRF-Token':csrf()},
+        body: JSON.stringify({[name]: enabled})
+      });
+      if (!r.ok) { const d = await r.json(); throw new Error(d.error || r.status); }
+      this.flash = name+' '+(enabled ? 'enabled' : 'disabled');
+      setTimeout(() => this.flash = '', 3000);
+    } catch(e) { this.err = e.message; }
+  }
+}))
+
+Alpine.data('thresholds', () => ({
+  spam: 0, reject: 0, saving: false, flash: '', err: '',
+  get saveLabel() { return this.saving ? 'Saving...' : 'Save thresholds'; },
+  init() {
+    this.spam = parseFloat(this.$el.dataset.spam);
+    this.reject = parseFloat(this.$el.dataset.reject);
+  },
+  async save() {
+    this.saving = true; this.flash = ''; this.err = '';
+    try {
+      const r = await fetch('/api/settings/thresholds', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','X-CSRF-Token':csrf()},
+        body: JSON.stringify({spam_score: this.spam, reject_score: this.reject})
+      });
+      if (!r.ok) { const d = await r.json(); throw new Error(d.error || r.status); }
+      this.flash = 'Saved';
+      setTimeout(() => this.flash = '', 3000);
+    } catch(e) { this.err = e.message; } finally { this.saving = false; }
+  }
+}))
+
+Alpine.data('apiKeys', () => ({
+  vtKey: '', ipKey: '', vtOk: false, ipOk: false, saving: false, flash: '', err: '',
+  get vtStatusClass() { return this.vtOk ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'; },
+  get vtStatusLabel() { return this.vtOk ? 'configured' : 'not set'; },
+  get ipStatusClass() { return this.ipOk ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'; },
+  get ipStatusLabel() { return this.ipOk ? 'configured' : 'not set'; },
+  get saveLabel() { return this.saving ? 'Saving...' : 'Save API keys'; },
+  init() {
+    this.vtOk = this.$el.dataset.vtOk === 'true';
+    this.ipOk = this.$el.dataset.ipOk === 'true';
+  },
+  async save() {
+    this.saving = true; this.flash = ''; this.err = '';
+    try {
+      const r = await fetch('/api/settings/api-keys', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','X-CSRF-Token':csrf()},
+        body: JSON.stringify({vt_api_key: this.vtKey.trim(), abuseipdb_key: this.ipKey.trim()})
+      });
+      if (!r.ok) { const d = await r.json(); throw new Error(d.error || r.status); }
+      const d = await r.json();
+      this.vtOk = d.vt_configured; this.ipOk = d.ipRep_configured;
+      this.vtKey = ''; this.ipKey = '';
+      this.flash = 'Saved';
+      setTimeout(() => this.flash = '', 3000);
+    } catch(e) { this.err = e.message; } finally { this.saving = false; }
+  }
+}))
+
+Alpine.data('notifications', () => ({
+  url: '', topic: '', token: '', saving: false, testing: false, flash: '', err: '',
+  get saveLabel() { return this.saving ? 'Saving...' : 'Save notifications'; },
+  get testLabel() { return this.testing ? 'Sending...' : 'Send test'; },
+  init() {
+    this.url = this.$el.dataset.url || '';
+    this.topic = this.$el.dataset.topic || '';
+  },
+  async save() {
+    this.saving = true; this.flash = ''; this.err = '';
+    try {
+      const r = await fetch('/api/settings/notifications', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','X-CSRF-Token':csrf()},
+        body: JSON.stringify({ntfy_url: this.url, ntfy_topic: this.topic, ntfy_token: this.token})
+      });
+      if (!r.ok) { const d = await r.json(); throw new Error(d.error || r.status); }
+      this.token = '';
+      this.flash = 'Saved';
+      setTimeout(() => this.flash = '', 3000);
+    } catch(e) { this.err = e.message; } finally { this.saving = false; }
+  },
+  async sendTest() {
+    this.testing = true; this.flash = ''; this.err = '';
+    try {
+      await apiPost('/api/settings/notify-test');
+      this.flash = 'Test sent';
+      setTimeout(() => this.flash = '', 3000);
+    } catch(e) { this.err = e.message; } finally { this.testing = false; }
+  }
+}))
+
+Alpine.data('webhookSettings', () => ({
+  url: '', verdicts: '', saving: false, flash: '', err: '',
+  get saveLabel() { return this.saving ? 'Saving...' : 'Save webhook'; },
+  async save() {
+    this.saving = true; this.flash = ''; this.err = '';
+    try {
+      const r = await fetch('/api/settings/webhook', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','X-CSRF-Token':csrf()},
+        body: JSON.stringify({url: this.url.trim(), verdicts: this.verdicts.trim()})
+      });
+      if (!r.ok) { const d = await r.json(); throw new Error(d.error || r.status); }
+      this.flash = 'Saved';
+      setTimeout(() => this.flash = '', 3000);
+    } catch(e) { this.err = e.message; } finally { this.saving = false; }
+  }
+}))
+
+Alpine.data('passwordChange', () => ({
+  current: '', newPw: '', confirm: '', saving: false, flash: '', err: '',
+  get saveLabel() { return this.saving ? 'Saving...' : 'Change password'; },
+  async save() {
+    this.saving = true; this.flash = ''; this.err = '';
+    try {
+      const r = await fetch('/api/settings/password', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','X-CSRF-Token':csrf()},
+        body: JSON.stringify({current: this.current, new: this.newPw, confirm: this.confirm})
+      });
+      if (r.status === 204) {
+        this.current = ''; this.newPw = ''; this.confirm = '';
+        this.flash = 'Password changed';
+        setTimeout(() => this.flash = '', 4000);
+      } else {
+        const text = await r.text();
+        let msg = text;
+        try { msg = JSON.parse(text).error || text; } catch(_) {}
+        throw new Error(msg);
+      }
+    } catch(e) { this.err = e.message; } finally { this.saving = false; }
+  }
+}))
+
+Alpine.data('imapAccounts', () => {
+  const blank = () => ({name:'',host:'',port:993,user:'',pass:'',mailbox:'INBOX',quarantine:'Quarantine',tls_skip_verify:false});
+  return {
+    accounts: [], loading: true, err: '',
+    showForm: false, editName: '', form: blank(),
+    saving: false, testing: false, formErr: '', formFlash: '',
+    get accountsEmpty() { return this.accounts.length === 0 && !this.loading; },
+    get formTitle() { return this.editName ? 'Edit account — ' + this.editName : 'Add IMAP account'; },
+    get hasEditName() { return !!this.editName; },
+    get noEditName() { return !this.editName; },
+    get saveButtonLabel() { return this.saving ? 'Saving...' : (this.editName ? 'Update' : 'Create'); },
+    get testLabel() { return this.testing ? 'Testing...' : 'Test connection'; },
+    cancelForm() { this.showForm = false; this.formErr = ''; this.formFlash = ''; },
+    openEditByIdx(event) { this.openEdit(this.accounts[Number(event.currentTarget.dataset.idx)]); },
+    removeByIdx(event) { this.remove(this.accounts[Number(event.currentTarget.dataset.idx)].name); },
+    async init() {
+      await this.load();
+    },
+    async load() {
+      this.loading = true;
+      try {
+        const r = await fetch('/api/settings/accounts');
+        if (!r.ok) throw new Error('failed to load');
+        const data = await r.json();
+        this.accounts = (data || []).map(a => ({ ...a, hostPort: a.host + ':' + a.port, mailboxRoute: a.mailbox + ' → ' + a.quarantine, statusDot: a.running ? 'bg-green-500' : 'bg-gray-300' }));
+      } catch(e) { this.err = e.message; } finally { this.loading = false; }
+    },
+    openAdd() { this.form = blank(); this.editName = ''; this.formErr = ''; this.formFlash = ''; this.showForm = true; },
+    openEdit(a) { this.form = {...a, pass:''}; this.editName = a.name; this.formErr = ''; this.formFlash = ''; this.showForm = true; },
+    async save() {
+      this.saving = true; this.formErr = ''; this.formFlash = '';
+      try {
+        let r;
+        if (this.editName) {
+          r = await fetch('/api/settings/accounts/'+encodeURIComponent(this.editName), {
+            method: 'PUT',
+            headers: {'Content-Type':'application/json','X-CSRF-Token':csrf()},
+            body: JSON.stringify(this.form)
+          });
+        } else {
+          r = await fetch('/api/settings/accounts', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json','X-CSRF-Token':csrf()},
+            body: JSON.stringify(this.form)
+          });
+        }
+        if (!r.ok) { const d = await r.json(); throw new Error(d.error || r.status); }
+        this.showForm = false;
+        await this.load();
+      } catch(e) { this.formErr = e.message; } finally { this.saving = false; }
+    },
+    async remove(name) {
+      if (!confirm('Delete account "'+name+'"? Its listener will stop immediately.')) return;
+      this.err = '';
+      try {
+        const r = await fetch('/api/settings/accounts/'+encodeURIComponent(name), {
+          method: 'DELETE',
+          headers: {'X-CSRF-Token':csrf()}
+        });
+        if (!r.ok) { const d = await r.json(); throw new Error(d.error || r.status); }
+        await this.load();
+      } catch(e) { this.err = e.message; }
+    },
+    async testConn() {
+      this.testing = true; this.formErr = ''; this.formFlash = '';
+      try {
+        const r = await fetch('/api/settings/accounts/test', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json','X-CSRF-Token':csrf()},
+          body: JSON.stringify({host:this.form.host, port:this.form.port, user:this.form.user, pass:this.form.pass})
+        });
+        if (!r.ok) { const d = await r.json(); throw new Error(d.error || r.status); }
+        this.formFlash = 'Connection successful';
+        setTimeout(() => this.formFlash = '', 4000);
+      } catch(e) { this.formErr = 'Connection failed: '+e.message; } finally { this.testing = false; }
+    }
+  }
+})
+
+Alpine.data('endpoints', () => ({
+  rspamd: '', clamav: '', yaraDir: '', saving: false, reloading: false, flash: '', err: '',
+  get saveLabel() { return this.saving ? 'Saving...' : 'Save endpoints'; },
+  get reloadLabel() { return this.reloading ? 'Reloading...' : 'Reload YARA rules'; },
+  init() {
+    this.rspamd = this.$el.dataset.rspamd || '';
+    this.clamav = this.$el.dataset.clamav || '';
+    this.yaraDir = this.$el.dataset.yaraDir || '';
+  },
+  async save() {
+    this.saving = true; this.flash = ''; this.err = '';
+    try {
+      const r = await fetch('/api/settings/endpoints', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','X-CSRF-Token':csrf()},
+        body: JSON.stringify({rspamd_url:this.rspamd, clamav_addr:this.clamav, yara_rules_dir:this.yaraDir})
+      });
+      if (!r.ok) { const d = await r.json(); throw new Error(d.error || r.status); }
+      this.flash = 'Saved';
+      setTimeout(() => this.flash = '', 3000);
+    } catch(e) { this.err = e.message; } finally { this.saving = false; }
+  },
+  async reloadYARA() {
+    this.reloading = true; this.flash = ''; this.err = '';
+    try {
+      await apiPost('/api/settings/yara-reload');
+      this.flash = 'Rules reloaded';
+      setTimeout(() => this.flash = '', 3000);
+    } catch(e) { this.err = e.message; } finally { this.reloading = false; }
+  }
+}))
+
+Alpine.data('customFeed', () => ({
+  entries: [], loading: true, err: '',
+  entry: '', entryType: 'domain', adding: false,
+  get feedEmpty() { return this.entries.length === 0 && !this.loading; },
+  get addLabel() { return this.adding ? 'Adding...' : 'Add'; },
+  async init() {
+    this.loading = true;
+    try {
+      const r = await fetch('/api/settings/custom-feed');
+      if (!r.ok) throw new Error('failed to load');
+      this.entries = await r.json() || [];
+    } catch(e) { this.err = e.message; } finally { this.loading = false; }
+  },
+  async add() {
+    if (!this.entry) return;
+    this.adding = true; this.err = '';
+    try {
+      const r = await fetch('/api/settings/custom-feed', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','X-CSRF-Token':csrf()},
+        body: JSON.stringify({entry: this.entry.trim(), entry_type: this.entryType})
+      });
+      if (!r.ok) { const d = await r.json(); throw new Error(d.error || r.status); }
+      this.entry = '';
+      await this.init();
+    } catch(e) { this.err = e.message; } finally { this.adding = false; }
+  },
+  async remove(id) {
+    this.err = '';
+    try {
+      const r = await fetch('/api/settings/custom-feed/' + id, {
+        method: 'DELETE',
+        headers: {'X-CSRF-Token':csrf()}
+      });
+      if (!r.ok) throw new Error('delete failed');
+      await this.init();
+    } catch(e) { this.err = e.message; }
+  },
+  removeFromEvent(event) { this.remove(Number(event.currentTarget.dataset.entryId)); },
+}))
+
+Alpine.data('maintenancePanel', () => ({
+  loading: false, flash: '', err: '',
+  get refreshLabel() { return this.loading ? 'Triggering...' : 'Refresh threat feeds'; },
+  async refresh() {
+    this.loading = true; this.flash = ''; this.err = '';
+    try {
+      await apiPost('/api/settings/feeds-refresh');
+      this.flash = 'Triggered';
+      setTimeout(() => this.flash = '', 3000);
+    } catch(e) { this.err = e.message; } finally { this.loading = false; }
+  }
+}))
+})
+</script>
+</body>
+</html>{{end}}

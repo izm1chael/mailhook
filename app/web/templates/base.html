@@ -1,0 +1,96 @@
+{{define "head"}}
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="csrf-token" content="{{.CSRFToken}}">
+<title>MailHook{{if .Title}} — {{.Title}}{{end}}</title>
+<script nonce="{{.Nonce}}">(function(){var d=localStorage.getItem('theme')==='dark'||(!localStorage.getItem('theme')&&matchMedia('(prefers-color-scheme:dark)').matches);if(d)document.documentElement.classList.add('dark');})()</script>
+<link rel="stylesheet" href="/static/tailwind.css">
+<script defer src="/static/alpine.min.js"></script>
+<style nonce="{{.Nonce}}">[x-cloak]{display:none!important}</style>
+<link rel="icon" type="image/svg+xml" href="/static/icon-dark.svg">
+{{end}}
+
+{{define "nav"}}
+<nav class="bg-gray-900 text-white px-6 py-3 flex items-center gap-6 shadow">
+  <a href="/" class="flex items-center gap-2 shrink-0">
+    <img src="/static/icon-dark.svg" alt="" width="28" height="28" class="rounded-md">
+    <span class="font-bold text-lg tracking-wide text-white">MailHook</span>
+  </a>
+  <a href="/" class="text-sm hover:text-white {{if eq .Nav "dashboard"}}text-white font-semibold{{else}}text-gray-400{{end}}">Dashboard</a>
+  <a href="/quarantine" class="text-sm hover:text-white {{if eq .Nav "quarantine"}}text-white font-semibold{{else}}text-gray-400{{end}}">Quarantine</a>
+  <a href="/stats" class="text-sm hover:text-white {{if eq .Nav "stats"}}text-white font-semibold{{else}}text-gray-400{{end}}">Stats</a>
+  <a href="/allowlists" class="text-sm hover:text-white {{if eq .Nav "allowlists"}}text-white font-semibold{{else}}text-gray-400{{end}}">Lists</a>
+  <a href="/audit" class="text-sm hover:text-white {{if eq .Nav "audit"}}text-white font-semibold{{else}}text-gray-400{{end}}">Audit</a>
+  <a href="/settings" class="text-sm hover:text-white {{if eq .Nav "settings"}}text-white font-semibold{{else}}text-gray-400{{end}}">Settings</a>
+  <div class="ml-auto flex items-center gap-4">
+    <span x-data="healthDot" class="flex items-center gap-1.5 text-xs text-gray-400">
+      <span :class="dot" class="inline-block w-2 h-2 rounded-full bg-gray-500"></span>
+      <span x-text="label">...</span>
+    </span>
+    <button id="dark-toggle" class="p-1.5 rounded-lg text-gray-400 hover:bg-gray-700" title="Toggle dark mode">
+      <svg class="w-5 h-5 hidden dark:block" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/></svg>
+      <svg class="w-5 h-5 dark:hidden" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/></svg>
+    </button>
+    <!-- nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token -->
+    <form method="POST" action="/logout">
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+      <button type="submit" class="text-gray-400 hover:text-white text-sm transition-colors">Logout</button>
+    </form>
+  </div>
+</nav>
+{{end}}
+
+{{define "scripts"}}
+<script nonce="{{.Nonce}}">
+document.addEventListener('alpine:init', () => {
+Alpine.data('healthDot', () => ({
+  dot: 'bg-gray-500',
+  label: '...',
+  init() {
+    const check = () => fetch('/health').then(r => r.json()).then(d => {
+      this.dot = d.status === 'healthy' ? 'bg-green-400' : 'bg-amber-400';
+      this.label = d.status;
+    }).catch(() => { this.dot = 'bg-red-500'; this.label = 'down'; });
+    check();
+    setInterval(check, 60000);
+  }
+}))
+})
+
+function csrf() {
+  return document.querySelector('meta[name="csrf-token"]').content;
+}
+
+async function apiPost(url) {
+  const r = await fetch(url, { method: 'POST', headers: { 'X-CSRF-Token': csrf() } });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+function verdictClass(verdict) {
+  const m = { MALWARE: 'bg-red-100 text-red-800', PHISH: 'bg-orange-100 text-orange-800',
+    SPAM: 'bg-yellow-100 text-yellow-800', SUSPICIOUS: 'bg-amber-100 text-amber-800',
+    CLEAN: 'bg-green-100 text-green-800' };
+  return m[verdict] || 'bg-gray-100 text-gray-800';
+}
+
+function statusClass(status) {
+  const m = { QUARANTINED: 'bg-red-100 text-red-700', INBOX: 'bg-green-100 text-green-700',
+    DELETED: 'bg-gray-100 text-gray-600', RELEASED: 'bg-blue-100 text-blue-700',
+    LEARNED_HAM: 'bg-teal-100 text-teal-700', LEARNED_SPAM: 'bg-purple-100 text-purple-700' };
+  return m[status] || 'bg-gray-100 text-gray-600';
+}
+
+function authClass(result) {
+  if (result === 'pass') return 'bg-green-100 text-green-700';
+  if (result === 'fail' || result === 'softfail') return 'bg-red-100 text-red-700';
+  return 'bg-gray-100 text-gray-500';
+}
+
+function toggleDark() {
+  var isDark = document.documentElement.classList.toggle('dark');
+  localStorage.setItem('theme', isDark ? 'dark' : 'light');
+}
+document.getElementById('dark-toggle').addEventListener('click', toggleDark);
+</script>
+{{end}}

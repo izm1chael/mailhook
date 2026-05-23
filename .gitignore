@@ -1,0 +1,36 @@
+# Runtime data (never commit)
+data/
+feeds-cache/
+*.db
+*.db-shm
+*.db-wal
+*.db.bak
+
+# Secrets — ignore all .env files; keep .env.example as a safe template
+.env*
+!.env.example
+config.yaml
+
+# Build output
+bin/
+dist/
+app/mailhook
+seed
+soak
+simulate
+
+# ONNX model files — downloaded via 'make models-bert' / 'make models-dga'
+# Keep only tranco-top10k.txt committed (small, refreshed quarterly)
+app/scanners/models/distilbert-phishing/
+app/scanners/models/dga-cnn/
+
+# Python model export artifacts
+app/scanners/models/distilbert-phishing/__pycache__/
+*.pyc
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.claude

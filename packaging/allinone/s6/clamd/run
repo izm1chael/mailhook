@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /command/s6-setuidgid clamav /usr/sbin/clamd --foreground

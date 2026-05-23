@@ -1,0 +1,38 @@
+[Unit]
+Description=MailHook Email Security Gateway
+Documentation=https://github.com/izm1chael/MailHook
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mailhook
+Group=mailhook
+
+# Load all MAILHOOK_* env vars from this file. The leading '-' means
+# the service starts even if the file doesn't exist yet.
+EnvironmentFile=-/etc/mailhook/mailhook.env
+
+ExecStart=/usr/local/bin/mailhook
+
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/mailhook /var/cache/mailhook
+CapabilityBoundingSet=
+AmbientCapabilities=
+LockPersonality=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

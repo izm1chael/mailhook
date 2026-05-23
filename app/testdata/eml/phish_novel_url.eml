@@ -1,0 +1,26 @@
+From: security-noreply@paypa1-secure.com
+To: customer@mailhook.test
+Subject: Your PayPal account has been limited
+Date: Sat, 17 Feb 2024 08:45:00 +0000
+Message-ID: <phish-test-001@paypa1-secure.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Authentication-Results: mx.mailhook.test;
+  spf=fail smtp.mailfrom=paypa1-secure.com;
+  dkim=fail header.d=paypa1-secure.com;
+  dmarc=fail header.from=paypa1-secure.com
+Received: from smtp.paypa1-secure.com ([91.108.4.1])
+  by mx.mailhook.test with ESMTP; Sat, 17 Feb 2024 08:45:01 +0000
+
+<html>
+<body>
+<p>Dear Customer,</p>
+<p>Your PayPal account has been <strong>limited</strong> due to suspicious activity.
+To restore full access to your account, you must verify your identity within
+24 hours or your account will be permanently suspended.</p>
+<p><a href="https://paypa1-account-verify.com/restore?token=abc123def456">
+Click here to verify your account now</a></p>
+<p>If you do not verify your account, you will lose access to all funds.</p>
+<p>PayPal Security Team</p>
+</body>
+</html>

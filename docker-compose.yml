@@ -1,0 +1,132 @@
+version: "3.9"
+
+networks:
+  # backend: private bridge for mailhook↔rspamd↔clamav — not routable outside Docker
+  backend:
+    driver: bridge
+
+services:
+  mailhook:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    container_name: mailhook
+    restart: unless-stopped
+    env_file: .env
+    # Run as non-root; ensure ./data and ./feeds-cache are owned by UID 1000 on the host
+    user: "1000:1000"
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - mailhook-data:/data
+      - ./feeds-cache:/feeds-cache
+      - ./rules:/rules:ro
+    networks:
+      - backend
+    depends_on:
+      rspamd:
+        condition: service_healthy
+      clamav:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          # MAX_CONCURRENT_SCANS (default 20) × MAX_EMAIL_SIZE_MB (default 100 MB)
+          # = 2 GB peak for in-flight messages, plus feed buffers and DB overhead.
+          # Adjust upward if you raise concurrency or email size limits.
+          memory: 3g
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  rspamd:
+    image: rspamd/rspamd:4.0.1@sha256:420ff124aaa35486d628af955831f9764831290ccc59914018e75dedad88cc3f
+    container_name: mailhook-rspamd
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64m
+      - /run:mode=0755,size=16m
+      - /var/log/rspamd:mode=0755,size=32m
+    volumes:
+      - ./rspamd-config/local.d:/etc/rspamd/local.d:ro
+      - rspamd-data:/var/lib/rspamd
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "rspamadm control stat || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  clamav:
+    image: clamav/clamav:stable@sha256:de10aee284800529bbdad5c45648afa81ab7cd45a14bc6d5ef7432496fef7b5c
+    container_name: mailhook-clamav
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=256m
+      - /run:mode=0755,size=16m
+      - /var/log/clamav:mode=0755,size=32m
+    volumes:
+      - clamav-db:/var/lib/clamav
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          # clamd idles at ~1.5GB; peaks to 2.2GB+ during freshclam DB reload
+          # when old DB is kept in memory while new one loads. 3G gives safe headroom.
+          # For RAM-constrained hosts: add ConcurrentDatabaseReload no to clamd config
+          # to trade brief scan downtime during updates for ~1.5GB stable footprint.
+          memory: 3g
+    healthcheck:
+      test: ["CMD-SHELL", "clamdcheck.sh || (echo 'PING' | nc -w 3 localhost 3310 | grep -q PONG)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+volumes:
+  mailhook-data:
+  rspamd-data:
+  clamav-db:

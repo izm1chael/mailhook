@@ -1,0 +1,28 @@
+From: spammer@bulk-mail.test
+To: victim@mailhook.test
+Subject: You have won a prize!
+Date: Wed, 20 May 2026 10:00:00 +0000
+Message-ID: <hidden-text-test-001@bulk-mail.test>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="bound02"
+
+--bound02
+Content-Type: text/plain; charset=utf-8
+
+You have won a prize! Click here to claim it.
+
+--bound02
+Content-Type: text/html; charset=utf-8
+
+<html>
+<head><title>Prize</title></head>
+<body bgcolor="#ffffff">
+<p>You have won a prize! Click here to claim it.</p>
+<span style="font-size:0;color:#ffffff">apple banana cherry dentist envelope flower garden hospital island jungle kettle lemon mango</span>
+<div style="display:none">random legitimate looking words to confuse bayes filter notebook ocean piano queue rabbit</div>
+<p style="visibility:hidden">saxophone turtle umbrella violin whiskey xylophone yellow zebra antelope buffalo crocodile</p>
+<p style="color:#ffffff;background-color:#ffffff">hidden color match text to confuse spam filters</p>
+</body>
+</html>
+
+--bound02--

@@ -1,0 +1,106 @@
+name: mailhook
+arch: "${NFPM_ARCH}"
+platform: linux
+version: "${VERSION}"
+version_schema: semver
+section: net
+priority: optional
+maintainer: "izm1chael <m1chael.johnson1804@gmail.com>"
+description: |
+  Self-hosted email security gateway.
+  Monitors IMAP mailboxes and scans messages using Rspamd, ClamAV,
+  YARA rules, URL threat intelligence feeds, IP reputation, and VirusTotal.
+  Quarantines threats and serves a web dashboard with live scan results.
+homepage: https://github.com/izm1chael/MailHook
+license: MIT
+
+# libyara is statically linked into the binary — no libyara runtime dep needed.
+# ClamAV and Rspamd are required services; install them automatically.
+overrides:
+  deb:
+    depends:
+      - clamav-daemon
+      - clamav-freshclam
+      - rspamd
+  rpm:
+    depends:
+      - clamd
+      - rspamd
+
+contents:
+  # Main binary
+  - src: "${BINARY_PATH}"
+    dst: /usr/local/bin/mailhook
+    file_info:
+      mode: 0755
+
+  # Systemd unit
+  - src: packaging/mailhook.service
+    dst: /lib/systemd/system/mailhook.service
+
+  # Default environment file (not overwritten on upgrade)
+  - src: packaging/mailhook.env
+    dst: /etc/mailhook/mailhook.env
+    type: config|noreplace
+    file_info:
+      owner: root
+      group: mailhook
+      mode: 0640
+
+  # Example IMAP config (not overwritten on upgrade)
+  - src: config.example.yaml
+    dst: /etc/mailhook/config.yaml
+    type: config|noreplace
+    file_info:
+      owner: root
+      group: mailhook
+      mode: 0640
+
+  # Runtime directories (owned by the mailhook service user)
+  - dst: /var/lib/mailhook
+    type: dir
+    file_info:
+      owner: mailhook
+      group: mailhook
+      mode: 0750
+
+  - dst: /var/lib/mailhook/emls
+    type: dir
+    file_info:
+      owner: mailhook
+      group: mailhook
+      mode: 0750
+
+  - dst: /var/lib/mailhook/rules
+    type: dir
+    file_info:
+      owner: mailhook
+      group: mailhook
+      mode: 0750
+
+  - dst: /var/cache/mailhook
+    type: dir
+    file_info:
+      owner: mailhook
+      group: mailhook
+      mode: 0750
+
+  - dst: /var/cache/mailhook/feeds
+    type: dir
+    file_info:
+      owner: mailhook
+      group: mailhook
+      mode: 0750
+
+  # Rspamd tuning — single-worker, Bayes SQLite backend (no Redis dependency)
+  - src: rspamd-config/local.d/worker-normal.inc
+    dst: /etc/rspamd/local.d/worker-normal.inc
+    type: config|noreplace
+
+  - src: rspamd-config/local.d/classifier-bayes.conf
+    dst: /etc/rspamd/local.d/classifier-bayes.conf
+    type: config|noreplace
+
+scripts:
+  postinstall: packaging/scripts/postinstall.sh
+  preremove: packaging/scripts/preremove.sh

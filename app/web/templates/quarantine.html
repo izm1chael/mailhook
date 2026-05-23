@@ -1,0 +1,420 @@
+{{define "quarantine.html"}}<!DOCTYPE html>
+<html lang="en">
+<head>{{template "head" .}}</head>
+<body class="bg-gray-100 text-gray-900 min-h-screen dark:bg-gray-900 dark:text-gray-100" x-data="quarantine"
+      @keydown.escape.window="closeDetail">
+{{template "nav" .}}
+<main class="max-w-7xl mx-auto px-4 py-6">
+
+  <div class="flex items-center justify-between mb-5">
+    <h1 class="text-xl font-semibold text-gray-900">Quarantine <span class="text-gray-400 font-normal text-base">({{.Total}} messages)</span></h1>
+  </div>
+
+  <!-- Filter bar -->
+  <form method="GET" class="flex flex-wrap gap-2 mb-4 items-end">
+    <select name="verdict" class="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <option value="" {{if eq (index .Filters "verdict") ""}}selected{{end}}>All verdicts</option>
+      {{range .VerdictOptions}}
+      <option value="{{.}}" {{if eq (index $.Filters "verdict") .}}selected{{end}}>{{.}}</option>
+      {{end}}
+    </select>
+    <input type="text" name="q" value="{{index .Filters "q"}}" placeholder="Search sender or subject…"
+      class="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 w-64">
+    <input type="date" name="from_date" value="{{index .Filters "from_date"}}"
+      class="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <input type="date" name="to_date" value="{{index .Filters "to_date"}}"
+      class="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <button type="submit" class="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors">Filter</button>
+    <a href="/quarantine" class="text-sm text-gray-500 hover:text-gray-700 px-3 py-2">Clear</a>
+    <a href="/api/export?status=QUARANTINED" class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg transition-colors ml-auto">Export CSV</a>
+  </form>
+
+  <!-- Action flash -->
+  <div x-show="flash" x-text="flash"
+    class="mb-4 p-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm"
+    x-transition x-cloak></div>
+  <div x-show="error" x-text="error"
+    class="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm"
+    x-transition x-cloak></div>
+
+  <!-- Bulk action toolbar -->
+  <div x-show="anySelected" x-cloak
+    class="mb-3 flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+    <span class="text-blue-700 font-medium" x-text="selectionLabel"></span>
+    <button @click="bulkRelease"
+      class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors">Release</button>
+    <button @click="bulkLearnSpam"
+      class="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors">Learn spam</button>
+    <button @click="bulkDelete"
+      class="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded transition-colors">Delete</button>
+  </div>
+
+  <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-gray-50 dark:bg-gray-700 text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+          <tr>
+            <th class="px-4 py-3 text-left w-8">
+              <input type="checkbox" @change="toggleAllFromEvent" class="rounded">
+            </th>
+            <th class="px-4 py-3 text-left">From</th>
+            <th class="px-4 py-3 text-left">Subject</th>
+            <th class="px-4 py-3 text-left">Verdict</th>
+            <th class="px-4 py-3 text-left">Score</th>
+            <th class="px-4 py-3 text-left">Auth</th>
+            <th class="px-4 py-3 text-left">Received</th>
+            <th class="px-4 py-3 text-left">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50 dark:divide-gray-700">
+          {{range .Scans}}
+          <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer" data-scan-id="{{.ID}}" @click="openDetailFromEvent">
+            <td class="px-4 py-3" @click.stop>
+              <input type="checkbox" data-scan-id="{{.ID}}"
+                @change="toggleOneFromEvent" class="rounded">
+            </td>
+            <td class="px-4 py-3 font-mono text-xs text-gray-700 dark:text-gray-300 truncate max-w-xs">{{.From}}</td>
+            <td class="px-4 py-3 text-gray-700 dark:text-gray-300 truncate max-w-sm">{{.Subject}}</td>
+            <td class="px-4 py-3">
+              <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                {{if eq .Verdict "MALWARE"}}bg-red-100 text-red-800
+                {{else if eq .Verdict "PHISH"}}bg-orange-100 text-orange-800
+                {{else if eq .Verdict "SPAM"}}bg-yellow-100 text-yellow-800
+                {{else if eq .Verdict "SUSPICIOUS"}}bg-amber-100 text-amber-800
+                {{else}}bg-green-100 text-green-800{{end}}">
+                {{.Verdict}}
+              </span>
+            </td>
+            <td class="px-4 py-3 font-mono text-xs text-gray-500 dark:text-gray-400">{{printf "%.1f" .RspamdScore}}</td>
+            <td class="px-4 py-3">
+              <div class="flex gap-1">
+                <span class="px-1 rounded text-xs
+                  {{if eq .SPFResult "pass"}}bg-green-100 text-green-700{{else}}bg-red-100 text-red-700{{end}}">
+                  SPF
+                </span>
+                <span class="px-1 rounded text-xs
+                  {{if eq .DKIMResult "pass"}}bg-green-100 text-green-700{{else}}bg-red-100 text-red-700{{end}}">
+                  DKIM
+                </span>
+                <span class="px-1 rounded text-xs
+                  {{if eq .DMARCResult "pass"}}bg-green-100 text-green-700{{else}}bg-red-100 text-red-700{{end}}">
+                  DMARC
+                </span>
+              </div>
+            </td>
+            <td class="px-4 py-3 text-gray-400 dark:text-gray-500 text-xs whitespace-nowrap">{{.CreatedAt.Format "Jan 02 15:04"}}</td>
+            <td class="px-4 py-3">
+              <div class="flex gap-2 flex-wrap" @click.stop>
+                <button data-scan-id="{{.ID}}" @click="releaseFromEvent"
+                  class="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded transition-colors">
+                  Release
+                </button>
+                <button data-scan-id="{{.ID}}" @click="releaseLearnFromEvent"
+                  class="text-xs bg-teal-600 hover:bg-teal-700 text-white px-2 py-1 rounded transition-colors">
+                  Release+Learn
+                </button>
+                <button data-scan-id="{{.ID}}" @click="learnSpamFromEvent"
+                  class="text-xs bg-amber-600 hover:bg-amber-700 text-white px-2 py-1 rounded transition-colors">
+                  Spam
+                </button>
+                <button data-scan-id="{{.ID}}" @click="delFromEvent"
+                  class="text-xs bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded transition-colors">
+                  Delete
+                </button>
+                <a href="/api/eml/{{.ID}}" target="_blank"
+                  class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1 rounded transition-colors">
+                  EML
+                </a>
+              </div>
+            </td>
+          </tr>
+          {{else}}
+          <tr>
+            <td colspan="8" class="px-4 py-10 text-center text-gray-400 text-sm">Quarantine is empty.</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+
+    {{if gt .Pages 1}}
+    <div class="px-5 py-4 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between text-sm">
+      <span class="text-gray-500 dark:text-gray-400">Page {{.Page}} of {{.Pages}}</span>
+      <div class="flex gap-2">
+        {{if gt .Page 1}}
+        <a href="?page={{sub .Page 1}}" class="px-3 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700">Prev</a>
+        {{end}}
+        {{if lt .Page .Pages}}
+        <a href="?page={{add .Page 1}}" class="px-3 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700">Next</a>
+        {{end}}
+      </div>
+    </div>
+    {{end}}
+  </div>
+
+  {{template "scan-detail" .}}
+
+</main>
+{{template "scripts" .}}
+<script nonce="{{.Nonce}}">
+document.addEventListener('alpine:init', () => {
+Alpine.data('quarantine', () => ({
+  flash: '',
+  error: '',
+  detailOpen: false,
+  detailLoading: false,
+  detailScan: null,
+  previewOpen: false,
+  selected: new Set(),
+  async act(url, msg) {
+    this.flash = ''; this.error = '';
+    try {
+      await apiPost(url);
+      this.flash = msg;
+      setTimeout(() => location.reload(), 1200);
+    } catch(e) { this.error = 'Action failed: ' + e.message; }
+  },
+  release(id) { this.act('/api/release/' + id, 'Released to inbox.'); },
+  releaseLearn(id) { this.act('/api/release-learn/' + id, 'Released and learned as ham.'); },
+  learnSpam(id) { this.act('/api/learn-spam/' + id, 'Submitted to spam learner.'); },
+  del(id) {
+    if (!confirm('Permanently delete this message?')) return;
+    this.act('/api/delete/' + id, 'Message deleted.');
+  },
+  async openDetail(id) {
+    this.detailOpen = true;
+    this.detailLoading = true;
+    this.detailScan = null;
+    this.previewOpen = false;
+    try {
+      const r = await fetch('/api/scans/' + id);
+      if (!r.ok) throw new Error(r.statusText);
+      this.detailScan = await r.json();
+    } catch(e) {
+      this.error = 'Could not load detail: ' + e.message;
+      this.detailOpen = false;
+    } finally {
+      this.detailLoading = false;
+    }
+  },
+  closeDetail() { this.detailOpen = false; this.detailScan = null; this.previewOpen = false; },
+  async releaseFromDetail() {
+    await this.act('/api/release/' + this.detailScan.ID, 'Released to inbox.');
+  },
+  async deleteFromDetail() {
+    if (!confirm('Permanently delete this message?')) return;
+    await this.act('/api/delete/' + this.detailScan.ID, 'Message deleted.');
+  },
+  async rescanFromDetail() {
+    try {
+      await apiPost('/api/rescan/' + this.detailScan.ID);
+      this.flash = 'Requeued for scanning.';
+      setTimeout(() => location.reload(), 1500);
+    } catch(e) { this.error = 'Re-scan failed: ' + e.message; }
+  },
+  verdictEmoji() {
+    if (!this.detailScan) return '';
+    const m = {'MALWARE': '🦠', 'PHISH': '🎣', 'SPAM': '📧', 'SUSPICIOUS': '⚠️', 'CLEAN': '✅'};
+    return m[this.detailScan.Verdict] || '❓';
+  },
+  confidenceText() {
+    if (!this.detailScan) return '';
+    return Math.round(this.detailScan.Confidence * 100) + '% confidence';
+  },
+  receivedText() {
+    if (!this.detailScan) return '';
+    return new Date(this.detailScan.CreatedAt).toLocaleString();
+  },
+  sizeText() {
+    if (!this.detailScan) return '';
+    return (this.detailScan.SizeBytes / 1024).toFixed(1) + ' KB';
+  },
+  authBadgeClass(val) {
+    return val === 'pass' ? 'bg-green-100 text-green-800' : (val ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-500');
+  },
+  authItems() {
+    if (!this.detailScan) return [];
+    return [
+      {label: 'SPF', val: this.detailScan.SPFResult},
+      {label: 'DKIM', val: this.detailScan.DKIMResult},
+      {label: 'DMARC', val: this.detailScan.DMARCResult},
+    ];
+  },
+  rspamdClass() {
+    if (!this.detailScan) return '';
+    return this.detailScan.RspamdScore >= 7 ? 'text-red-700' : this.detailScan.RspamdScore >= 5 ? 'text-yellow-700' : 'text-green-700';
+  },
+  rspamdText() {
+    if (!this.detailScan) return '';
+    return this.detailScan.RspamdScore.toFixed(1) + ' — ' + (this.detailScan.RspamdAction || 'no action');
+  },
+  yaraClass() {
+    if (!this.detailScan) return 'text-gray-400';
+    try { return JSON.parse(this.detailScan.YARAMatches || '[]').length > 0 ? 'text-red-700 font-mono' : 'text-gray-400'; } catch { return 'text-gray-400'; }
+  },
+  yaraText() {
+    if (!this.detailScan) return 'No matches';
+    try {
+      const m = JSON.parse(this.detailScan.YARAMatches || '[]');
+      return m.length > 0 ? m.join(', ') : 'No matches';
+    } catch { return 'No matches'; }
+  },
+  urlHitsList() {
+    if (!this.detailScan) return [];
+    try { return JSON.parse(this.detailScan.URLHits); } catch { return []; }
+  },
+  hitText(hit) {
+    return hit.url + (hit.feed ? ' [' + hit.feed + ']' : '');
+  },
+  ipAbuseClass() {
+    if (!this.detailScan) return 'text-yellow-700';
+    try { return JSON.parse(this.detailScan.IPReputation).abuse_score > 50 ? 'text-red-700' : 'text-yellow-700'; } catch { return 'text-yellow-700'; }
+  },
+  ipAbuseText() {
+    if (!this.detailScan) return '';
+    try { return 'Score: ' + JSON.parse(this.detailScan.IPReputation).abuse_score + '/100'; } catch { return ''; }
+  },
+  vtResultsList() {
+    if (!this.detailScan) return [];
+    try { return JSON.parse(this.detailScan.VTResults); } catch { return []; }
+  },
+  vtResultText(r) {
+    return r.positives + '/' + r.total + ' engines — ' + String(r.sha256 || '').slice(0, 12) + '...';
+  },
+  hasNoAttachments() {
+    if (!this.detailScan || !this.detailScan.Attachments || this.detailScan.Attachments === 'null') return true;
+    try { return JSON.parse(this.detailScan.Attachments || '[]').length === 0; } catch { return true; }
+  },
+  hasAttachments() { return !this.hasNoAttachments(); },
+  attachmentsList() {
+    if (!this.detailScan) return [];
+    try { return JSON.parse(this.detailScan.Attachments || '[]'); } catch { return []; }
+  },
+  attachmentSize(a) {
+    return (a.SizeBytes / 1024).toFixed(1) + ' KB';
+  },
+  attachmentVTText(a) {
+    return a.VTPositives !== undefined ? a.VTPositives + '/' + a.VTTotal + ' engines' : '—';
+  },
+  clamavClass() {
+    if (!this.detailScan) return 'text-green-700';
+    return this.detailScan.ClamAVStatus && this.detailScan.ClamAVStatus.startsWith('VIRUS') ? 'text-red-700 font-bold' : 'text-green-700';
+  },
+  toggleAll(checked) {
+    const boxes = document.querySelectorAll('input[data-scan-id]');
+    const newSet = new Set();
+    boxes.forEach(b => { b.checked = checked; if (checked) newSet.add(Number(b.dataset.scanId)); });
+    this.selected = newSet;
+  },
+  toggleOne(id) {
+    const s = new Set(this.selected);
+    if (s.has(id)) { s.delete(id); } else { s.add(id); }
+    this.selected = s;
+  },
+  async bulkAct(action) {
+    const ids = Array.from(this.selected);
+    if (action === 'delete' && !confirm('Delete ' + ids.length + ' message(s)?')) return;
+    this.flash = ''; this.error = '';
+    try {
+      const r = await fetch('/api/bulk-action', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','X-CSRF-Token': csrf()},
+        body: JSON.stringify({action, ids})
+      });
+      const d = await r.json();
+      this.flash = d.succeeded + ' ' + action + (action === 'delete' ? 'd' : 'd') + (d.failed > 0 ? ', ' + d.failed + ' failed' : '') + '.';
+      this.selected = new Set();
+      setTimeout(() => location.reload(), 1200);
+    } catch(e) { this.error = 'Bulk action failed: ' + e.message; }
+  },
+  get verdictBannerClass() {
+    if (!this.detailScan) return '';
+    const m = { MALWARE: 'bg-red-50 border border-red-200', PHISH: 'bg-orange-50 border border-orange-200', SPAM: 'bg-yellow-50 border border-yellow-200', SUSPICIOUS: 'bg-amber-50 border border-amber-200', CLEAN: 'bg-green-50 border border-green-200' };
+    return m[this.detailScan.Verdict] || '';
+  },
+  get verdictBadgeClass() {
+    if (!this.detailScan) return 'bg-gray-100 text-gray-800';
+    const m = { MALWARE: 'bg-red-100 text-red-800', PHISH: 'bg-orange-100 text-orange-800', SPAM: 'bg-yellow-100 text-yellow-800', SUSPICIOUS: 'bg-amber-100 text-amber-800', CLEAN: 'bg-green-100 text-green-800' };
+    return m[this.detailScan.Verdict] || 'bg-gray-100 text-gray-800';
+  },
+  get verdictEmojiVal() { return this.verdictEmoji(); },
+  get confidenceLabel() { return this.confidenceText(); },
+  get receivedLabel() { return this.receivedText(); },
+  get sendingIPLabel() { return (this.detailScan && this.detailScan.SendingIP) ? this.detailScan.SendingIP : '—'; },
+  get sizeLabel() { return this.sizeText(); },
+  get authItemsList() {
+    if (!this.detailScan) return [];
+    const cls = (v) => v === 'pass' ? 'bg-green-100 text-green-800' : (v ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-500');
+    return [
+      { label: 'SPF',   val: this.detailScan.SPFResult,   cls: cls(this.detailScan.SPFResult),   display: this.detailScan.SPFResult   || 'none' },
+      { label: 'DKIM',  val: this.detailScan.DKIMResult,  cls: cls(this.detailScan.DKIMResult),  display: this.detailScan.DKIMResult  || 'none' },
+      { label: 'DMARC', val: this.detailScan.DMARCResult, cls: cls(this.detailScan.DMARCResult), display: this.detailScan.DMARCResult || 'none' },
+    ];
+  },
+  get rspamdScoreClass() { return this.rspamdClass(); },
+  get rspamdScoreText() { return this.rspamdText(); },
+  get clamavCssClass() { return this.clamavClass(); },
+  get clamavStatusLabel() { return (this.detailScan && this.detailScan.ClamAVStatus) ? this.detailScan.ClamAVStatus : 'UNAVAILABLE'; },
+  get yaraScoreClass() { return this.yaraClass(); },
+  get yaraScoreText() { return this.yaraText(); },
+  get urlHitsEmpty() { return !this.detailScan || !this.detailScan.URLHits || this.detailScan.URLHits === 'null'; },
+  get urlHitsPresent() { return !this.urlHitsEmpty; },
+  get urlHitsItems() {
+    if (!this.detailScan) return [];
+    try { return JSON.parse(this.detailScan.URLHits).map(h => ({ ...h, display: h.url + (h.feed ? ' [' + h.feed + ']' : '') })); } catch { return []; }
+  },
+  get ipRepEmpty() { return !this.detailScan || !this.detailScan.IPReputation || this.detailScan.IPReputation === 'null'; },
+  get ipRepPresent() { return !this.ipRepEmpty; },
+  get ipNoRepLabel() { return (this.detailScan && this.detailScan.SendingIP) ? 'Clean' : 'No IP'; },
+  get ipAbuseScoreClass() { return this.ipAbuseClass(); },
+  get ipAbuseScoreText() { return this.ipAbuseText(); },
+  get vtResultsEmpty() { return !this.detailScan || !this.detailScan.VTResults || this.detailScan.VTResults === 'null'; },
+  get vtResultsPresent() { return !this.vtResultsEmpty; },
+  get vtItems() {
+    if (!this.detailScan) return [];
+    try {
+      return JSON.parse(this.detailScan.VTResults).map(r => ({
+        ...r,
+        cls: r.positives > 0 ? 'text-red-700 font-bold' : 'text-green-700',
+        display: r.positives + '/' + r.total + ' engines — ' + String(r.sha256 || '').slice(0, 12) + '...',
+      }));
+    } catch { return []; }
+  },
+  get noAttachments() { return this.hasNoAttachments(); },
+  get hasAttachmentsVal() { return !this.noAttachments; },
+  get attachmentsItems() {
+    if (!this.detailScan) return [];
+    try {
+      return JSON.parse(this.detailScan.Attachments || '[]').map(a => ({
+        ...a,
+        cls: a.IsDangerous ? 'text-red-700' : 'text-gray-700',
+        filename: a.Filename || '(unnamed)',
+        sizeLabel: (a.SizeBytes / 1024).toFixed(1) + ' KB',
+        vtCls: a.VTPositives > 0 ? 'text-red-700 font-bold' : 'text-gray-400',
+        vtDisplay: a.VTPositives !== undefined ? a.VTPositives + '/' + a.VTTotal + ' engines' : '—',
+      }));
+    } catch { return []; }
+  },
+  get isQuarantined() { return !!(this.detailScan && this.detailScan.Status === 'QUARANTINED'); },
+  get emlHref() { return '/api/eml/' + (this.detailScan ? this.detailScan.ID : ''); },
+  get previewToggleLabel() { return this.previewOpen ? 'Hide preview' : 'Show preview'; },
+  get previewSrc() { return '/api/preview/' + (this.detailScan ? this.detailScan.ID : ''); },
+  get anySelected() { return this.selected.size > 0; },
+  get selectionLabel() { return this.selected.size + ' selected'; },
+  get isDetailReady() { return !!(this.detailScan && !this.detailLoading); },
+  get subjectLabel() { return (this.detailScan && this.detailScan.Subject) ? this.detailScan.Subject : '(no subject)'; },
+  bulkRelease() { this.bulkAct('release'); },
+  bulkLearnSpam() { this.bulkAct('learn-spam'); },
+  bulkDelete() { this.bulkAct('delete'); },
+  toggleAllFromEvent(event) { this.toggleAll(event.target.checked); },
+  toggleOneFromEvent(event) { this.toggleOne(Number(event.currentTarget.dataset.scanId)); },
+  releaseFromEvent(event) { this.release(Number(event.currentTarget.dataset.scanId)); },
+  releaseLearnFromEvent(event) { this.releaseLearn(Number(event.currentTarget.dataset.scanId)); },
+  learnSpamFromEvent(event) { this.learnSpam(Number(event.currentTarget.dataset.scanId)); },
+  delFromEvent(event) { this.del(Number(event.currentTarget.dataset.scanId)); },
+  openDetailFromEvent(event) { this.openDetail(Number(event.currentTarget.dataset.scanId)); },
+}))
+})
+</script>
+</body>
+</html>{{end}}

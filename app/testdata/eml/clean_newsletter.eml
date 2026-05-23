@@ -1,0 +1,28 @@
+From: digest@techcrunch-news.example.com
+To: reader@mailhook.test
+Subject: Weekly Tech Digest - Feb 2024
+Date: Mon, 19 Feb 2024 07:00:00 +0000
+Message-ID: <digest-2024-02-19@techcrunch-news.example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.mailhook.test;
+  spf=pass smtp.mailfrom=techcrunch-news.example.com;
+  dkim=pass header.d=techcrunch-news.example.com;
+  dmarc=pass header.from=techcrunch-news.example.com
+Received: from mail.techcrunch-news.example.com ([203.0.113.50])
+  by mx.mailhook.test with ESMTPS; Mon, 19 Feb 2024 07:00:01 +0000
+
+This week in tech:
+
+1. OpenAI releases new model with improved reasoning capabilities
+   https://techcrunch.com/2024/02/19/openai-new-model
+
+2. Google announces expanded cloud regions in Asia Pacific
+   https://cloud.google.com/blog/2024/02/new-regions
+
+3. Stripe raises $694M at $65B valuation
+   https://www.wsj.com/articles/stripe-funding-2024
+
+Have a great week!
+
+The TechCrunch Digest Team

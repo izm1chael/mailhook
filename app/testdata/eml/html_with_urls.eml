@@ -1,0 +1,30 @@
+From: Newsletter <news@example.com>
+To: Bob <bob@mailhook.test>
+Subject: Check out these links
+Date: Tue, 02 Jan 2024 09:00:00 +0000
+Message-ID: <test-html-001@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="boundary01"
+Authentication-Results: mx.mailhook.test;
+  spf=pass smtp.mailfrom=news@example.com;
+  dkim=pass header.d=example.com;
+  dmarc=pass header.from=example.com
+Received: from smtp.example.com ([198.51.100.5])
+  by mx.mailhook.test with ESMTP; Tue, 02 Jan 2024 09:00:00 +0000
+
+--boundary01
+Content-Type: text/plain; charset=utf-8
+
+Visit https://www.example.com/page?utm_source=email&utm_medium=newsletter for more.
+Also see http://tracking.example.org/click?id=123
+
+--boundary01
+Content-Type: text/html; charset=utf-8
+
+<html><body>
+<a href="https://www.example.com/page?utm_source=email&utm_medium=newsletter">Click here</a>
+<a href="http://malicious.example.net/payload">Bad link</a>
+<img src="https://images.example.com/pixel.gif">
+</body></html>
+
+--boundary01--

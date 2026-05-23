@@ -1,0 +1,18 @@
+accounts:
+  - name: primary
+    host: mail.example.com
+    port: 993
+    user: you@example.com
+    pass: your_app_password_here
+    mailbox: INBOX
+    quarantine: Quarantine
+    tls_skip_verify: false
+
+  # Add additional accounts as needed:
+  # - name: secondary
+  #   host: mail2.example.com
+  #   port: 993
+  #   user: alerts@example.com
+  #   pass: another_app_password
+  #   mailbox: INBOX
+  #   quarantine: Quarantine

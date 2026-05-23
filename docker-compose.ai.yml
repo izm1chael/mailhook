@@ -1,0 +1,27 @@
+# AI build overlay — use with:
+#   docker compose -f docker-compose.yml -f docker-compose.ai.yml up
+#
+# Models are embedded in the binary — no separate model volume is needed.
+# The only runtime difference vs the standard build is libonnxruntime.so
+# (already baked into Dockerfile.ai) and ~265MB additional RSS.
+#
+# Before building, ensure model files are in place:
+#   make models-dl    # Tranco greylist
+#   make models-bert  # DistilBERT ONNX export
+
+services:
+  mailhook:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.ai
+      args:
+        VERSION: ${VERSION:-dev}
+    environment:
+      # Thresholds only — no MAILHOOK_ONNX_MODELS_DIR needed (models are embedded).
+      MAILHOOK_ONNX_BERT_THRESHOLD: "0.85"
+      MAILHOOK_ONNX_DGA_THRESHOLD: "0.80"
+    deploy:
+      resources:
+        limits:
+          # +265MB for DistilBERT (~250MB) + DGA CNN (~15MB) over standard ~600MB.
+          memory: 1.5g

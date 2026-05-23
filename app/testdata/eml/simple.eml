@@ -1,0 +1,15 @@
+From: Alice <alice@example.com>
+To: Bob <bob@mailhook.test>
+Subject: Hello from Alice
+Date: Mon, 01 Jan 2024 12:00:00 +0000
+Message-ID: <test-simple-001@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.mailhook.test;
+  spf=pass smtp.mailfrom=alice@example.com;
+  dkim=pass header.d=example.com;
+  dmarc=pass header.from=example.com
+Received: from mail.example.com ([203.0.113.1])
+  by mx.mailhook.test with ESMTP; Mon, 01 Jan 2024 12:00:00 +0000
+
+Hello, Bob! This is a plain text email.

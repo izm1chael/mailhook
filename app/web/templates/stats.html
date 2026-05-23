@@ -1,0 +1,308 @@
+{{define "stats.html"}}<!DOCTYPE html>
+<html lang="en">
+<head>{{template "head" .}}</head>
+<body class="bg-gray-100 text-gray-900 min-h-screen dark:bg-gray-900 dark:text-gray-100">
+{{template "nav" .}}
+<main class="max-w-7xl mx-auto px-4 py-6">
+
+  <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-5">Statistics <span class="text-gray-400 font-normal text-base">(last 30 days)</span></h1>
+
+  <!-- Charts row -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+
+    <!-- Stacked area chart -->
+    <div class="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm p-5">
+      <h2 class="font-semibold text-gray-800 dark:text-gray-200 mb-4">Daily scan trend</h2>
+      <canvas id="trendChart" height="120"></canvas>
+    </div>
+
+    <!-- Verdict pie -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-5">
+      <h2 class="font-semibold text-gray-800 dark:text-gray-200 mb-4">Verdict distribution</h2>
+      <canvas id="pieChart" height="180"></canvas>
+      <div class="mt-4 space-y-1">
+        {{range .VerdictCounts}}
+        <div class="flex items-center justify-between text-sm">
+          <span class="
+            {{if eq .Verdict "MALWARE"}}text-red-700
+            {{else if eq .Verdict "PHISH"}}text-orange-700
+            {{else if eq .Verdict "SPAM"}}text-yellow-700
+            {{else if eq .Verdict "SUSPICIOUS"}}text-amber-700
+            {{else}}text-green-700{{end}} font-medium">
+            {{.Verdict}}
+          </span>
+          <span class="font-semibold text-gray-700">{{.Count}}</span>
+        </div>
+        {{else}}
+        <p class="text-gray-400 text-sm">No data yet.</p>
+        {{end}}
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Sankey flow diagram -->
+  <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-5 mb-6">
+    <h2 class="font-semibold text-gray-800 dark:text-gray-200 mb-1">Email flow</h2>
+    <p class="text-xs text-gray-400 mb-4">How emails move from verdict to final disposition</p>
+    <div id="sankeyChart" class="h-[320px]"></div>
+  </div>
+
+  <!-- Top senders -->
+  <div class="bg-white rounded-xl shadow-sm p-5">
+    <h2 class="font-semibold text-gray-800 mb-4">Top senders</h2>
+    <div class="space-y-2">
+      {{range .TopSenders}}
+      <div class="flex items-center justify-between text-sm">
+        <span class="text-gray-600 font-mono truncate max-w-xs">{{.From}}</span>
+        <span class="font-semibold text-gray-800 ml-2">{{.Count}}</span>
+      </div>
+      {{else}}
+      <p class="text-gray-400 text-sm">No data yet.</p>
+      {{end}}
+    </div>
+  </div>
+
+</main>
+
+<script src="/static/chart.min.js"></script>
+<script src="/static/echarts.min.js"></script>
+<script nonce="{{.Nonce}}">
+(function(){
+  // ── daily trend + pie ────────────────────────────────────────────────────────
+  var daily = [
+    {{range .DailyStats}}
+    {date:"{{.Date}}",clean:{{.Clean}},spam:{{.Spam}},phish:{{.Phish}},malware:{{.Malware}},suspicious:{{.Suspicious}}},
+    {{end}}
+  ];
+
+  var labels = daily.map(function(d){return d.date});
+  var clean      = daily.map(function(d){return d.clean});
+  var spam       = daily.map(function(d){return d.spam});
+  var phish      = daily.map(function(d){return d.phish});
+  var malware    = daily.map(function(d){return d.malware});
+  var suspicious = daily.map(function(d){return d.suspicious});
+
+  var tCtx = document.getElementById('trendChart');
+  if(tCtx && labels.length > 0){
+    new Chart(tCtx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          {label:'Clean',     data:clean,      backgroundColor:'rgba(34,197,94,0.25)',  borderColor:'#16a34a', fill:true, tension:0.3, pointRadius:2},
+          {label:'Spam',      data:spam,       backgroundColor:'rgba(234,179,8,0.25)',  borderColor:'#ca8a04', fill:true, tension:0.3, pointRadius:2},
+          {label:'Phish',     data:phish,      backgroundColor:'rgba(249,115,22,0.25)', borderColor:'#ea580c', fill:true, tension:0.3, pointRadius:2},
+          {label:'Malware',   data:malware,    backgroundColor:'rgba(239,68,68,0.25)',  borderColor:'#dc2626', fill:true, tension:0.3, pointRadius:2},
+          {label:'Suspicious',data:suspicious, backgroundColor:'rgba(245,158,11,0.25)', borderColor:'#d97706', fill:true, tension:0.3, pointRadius:2},
+        ]
+      },
+      options:{
+        responsive:true,
+        plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}},
+        scales:{
+          x:{ticks:{maxTicksLimit:10,font:{size:10}}},
+          y:{stacked:true,beginAtZero:true,ticks:{font:{size:10}}}
+        }
+      }
+    });
+  } else if(tCtx) {
+    tCtx.parentElement.innerHTML += '<p class="text-gray-400 text-sm mt-2">No daily data yet.</p>';
+  }
+
+  var pieCtx = document.getElementById('pieChart');
+  var verdictData = [
+    {{range .VerdictCounts}}{label:"{{.Verdict}}",value:{{.Count}}},{{end}}
+  ];
+  if(pieCtx && verdictData.length > 0){
+    var colorMap = {CLEAN:'#22c55e',SPAM:'#eab308',PHISH:'#f97316',MALWARE:'#ef4444',SUSPICIOUS:'#f59e0b'};
+    new Chart(pieCtx, {
+      type: 'doughnut',
+      data: {
+        labels: verdictData.map(function(d){return d.label}),
+        datasets:[{
+          data: verdictData.map(function(d){return d.value}),
+          backgroundColor: verdictData.map(function(d){return colorMap[d.label]||'#94a3b8'}),
+          borderWidth: 1
+        }]
+      },
+      options:{responsive:true, plugins:{legend:{display:false}}}
+    });
+  }
+
+  // ── Sankey flow diagram ──────────────────────────────────────────────────────
+  var flowRaw = [
+    {{range .FlowData}}{verdict:"{{.Verdict}}",status:"{{.Status}}",count:{{.Count}}},
+    {{end}}
+  ];
+
+  if(flowRaw.length > 0){
+    // Map DB status → display label (collapse LEARNED_HAM→Released, LEARNED_SPAM→Deleted)
+    var statusLabel = {
+      INBOX:'Delivered', QUARANTINED:'In Quarantine',
+      RELEASED:'Released', LEARNED_HAM:'Released',
+      DELETED:'Deleted', LEARNED_SPAM:'Deleted'
+    };
+    var nodeColors = {
+      CLEAN:'#22c55e', SPAM:'#eab308', PHISH:'#f97316',
+      MALWARE:'#ef4444', SUSPICIOUS:'#f59e0b',
+      Delivered:'#3b82f6', 'In Quarantine':'#f97316',
+      Released:'#06b6d4', Deleted:'#94a3b8'
+    };
+
+    // Aggregate links and totals
+    var linkMap = {}, leftTotals = {}, rightTotals = {};
+    flowRaw.forEach(function(d){
+      var dest = statusLabel[d.status] || d.status;
+      var key = d.verdict+'|'+dest;
+      linkMap[key] = (linkMap[key]||0) + d.count;
+      leftTotals[d.verdict]  = (leftTotals[d.verdict]||0)  + d.count;
+      rightTotals[dest]      = (rightTotals[dest]||0)      + d.count;
+    });
+
+    var verdictOrder = ['CLEAN','SPAM','PHISH','MALWARE','SUSPICIOUS'];
+    var destOrder    = ['Delivered','In Quarantine','Released','Deleted'];
+    var verdictNodes = verdictOrder.filter(function(v){ return leftTotals[v] > 0; });
+    var destNodes    = destOrder.filter(function(v){ return rightTotals[v] > 0; });
+
+    var sankeyNodes = verdictNodes.concat(destNodes).map(function(name){
+      return {name:name, itemStyle:{color: nodeColors[name]||'#64748b'}};
+    });
+    var sankeyLinks = Object.keys(linkMap).map(function(k){
+      var p = k.split('|');
+      return {source:p[0], target:p[1], value:linkMap[k],
+              lineStyle:{color: nodeColors[p[0]]||'#64748b', opacity:0.45}};
+    }).filter(function(l){ return l.value > 0; });
+
+    var chart = echarts.init(document.getElementById('sankeyChart'));
+    chart.setOption({
+      animation: true,
+      animationDuration: 1600,
+      animationEasing: 'cubicOut',
+      tooltip:{
+        trigger:'item',
+        formatter:function(p){
+          return p.dataType==='edge'
+            ? p.data.source+' → '+p.data.target+': <b>'+p.data.value+'</b>'
+            : '<b>'+p.name+'</b>';
+        }
+      },
+      series:[{
+        type:'sankey',
+        left:80, right:120, top:20, bottom:20,
+        nodeWidth:18, nodeGap:14,
+        emphasis:{focus:'adjacency'},
+        data: sankeyNodes,
+        links: sankeyLinks,
+        label:{color:'#374151', fontSize:12, fontWeight:'500'}
+      }]
+    });
+
+    // Particle animation overlay
+    chart.on('finished', function(){
+      startParticles(chart, verdictNodes, destNodes, leftTotals, rightTotals, linkMap, nodeColors);
+    });
+
+    window.addEventListener('resize', function(){ chart.resize(); });
+  }
+
+  function startParticles(chart, verdictNodes, destNodes, leftTotals, rightTotals, linkMap, nodeColors) {
+    var container = document.getElementById('sankeyChart');
+    var existing  = container.querySelector('canvas.particle-layer');
+    if(existing) existing.remove();
+
+    var cvs = document.createElement('canvas');
+    cvs.className = 'particle-layer';
+    cvs.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none';
+    container.style.position = 'relative';
+    container.appendChild(cvs);
+
+    var W = container.offsetWidth, H = container.offsetHeight;
+    cvs.width = W; cvs.height = H;
+    var ctx2 = cvs.getContext('2d');
+
+    // Approximate ECharts Sankey layout (matches left:80 right:120 top:20 bottom:20)
+    var PAD_L = 80 + 18, PAD_R = W - 120, PAD_T = 20, PAD_B = H - 20;
+    var NODE_GAP = 14;
+
+    function computePositions(nodes, totals) {
+      var total = nodes.reduce(function(s,n){ return s+(totals[n]||0); },0);
+      var avail = (PAD_B - PAD_T) - (nodes.length-1)*NODE_GAP;
+      var y = PAD_T, pos = {};
+      nodes.forEach(function(name){
+        var h = ((totals[name]||0)/total)*avail;
+        pos[name] = {y0:y, y1:y+h, cy:(y+y+h)/2};
+        y += h + NODE_GAP;
+      });
+      return pos;
+    }
+
+    var leftPos  = computePositions(verdictNodes, leftTotals);
+    var rightPos = computePositions(destNodes, rightTotals);
+    var midX = (PAD_L + PAD_R) / 2;
+
+    // Build particles for each link
+    var particles = [];
+    var outOffset = {}, inOffset = {};
+    Object.keys(linkMap).forEach(function(k){
+      var val   = linkMap[k];
+      if(!val) return;
+      var parts  = k.split('|');
+      var src    = parts[0], dst = parts[1];
+      var lp     = leftPos[src], rp = rightPos[dst];
+      if(!lp || !rp) return;
+
+      if(outOffset[src]===undefined) outOffset[src] = lp.y0;
+      if(inOffset[dst]===undefined)  inOffset[dst]  = rp.y0;
+
+      var srcH   = (val/leftTotals[src]) * (lp.y1-lp.y0);
+      var srcCY  = outOffset[src] + srcH/2;
+      outOffset[src] += srcH;
+
+      var dstH   = (val/rightTotals[dst]) * (rp.y1-rp.y0);
+      var dstCY  = inOffset[dst] + dstH/2;
+      inOffset[dst] += dstH;
+
+      var n = Math.max(2, Math.min(8, Math.round(val / Math.max(...Object.values(leftTotals)) * 10)));
+      var color = nodeColors[src] || '#64748b';
+
+      for(var i=0; i<n; i++){
+        particles.push({
+          t: i/n,
+          speed: 0.0025 + Math.random()*0.0015,
+          x0: PAD_L,  y0: srcCY,
+          cx0: midX,  cy0: srcCY,
+          cx1: midX,  cy1: dstCY,
+          x1: PAD_R,  y1: dstCY,
+          color: color,
+          r: 2 + Math.random()*1.5
+        });
+      }
+    });
+
+    function bez(t,a,b,c,d){ var u=1-t; return u*u*u*a+3*u*u*t*b+3*u*t*t*c+t*t*t*d; }
+
+    (function loop(){
+      ctx2.clearRect(0,0,W,H);
+      particles.forEach(function(p){
+        p.t += p.speed;
+        if(p.t>1) p.t-=1;
+        var x = bez(p.t, p.x0,p.cx0,p.cx1,p.x1);
+        var y = bez(p.t, p.y0,p.cy0,p.cy1,p.y1);
+        var fade = p.t<0.08 ? p.t/0.08 : p.t>0.92 ? (1-p.t)/0.08 : 1;
+        ctx2.beginPath();
+        ctx2.arc(x,y,p.r,0,Math.PI*2);
+        ctx2.fillStyle = p.color;
+        ctx2.globalAlpha = 0.75*fade;
+        ctx2.fill();
+      });
+      ctx2.globalAlpha = 1;
+      requestAnimationFrame(loop);
+    })();
+  }
+})();
+</script>
+
+{{template "scripts" .}}
+</body>
+</html>{{end}}

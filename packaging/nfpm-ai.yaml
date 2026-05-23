@@ -1,0 +1,100 @@
+name: mailhook-ai
+arch: "${NFPM_ARCH}"
+platform: linux
+version: "${VERSION}"
+version_schema: semver
+section: net
+priority: optional
+maintainer: "izm1chael <m1chael.johnson1804@gmail.com>"
+description: |
+  Self-hosted email security gateway — AI-enabled build.
+  Includes all standard features (Rspamd, ClamAV, YARA, URL threat feeds,
+  IP reputation, VirusTotal) plus native ONNX AI inference:
+    - DistilBERT phishing/BEC prose detector (~250 MB embedded)
+    - DGA CNN algorithmically-generated domain detector (~15 MB embedded)
+  Models are embedded in the binary — no separate model directory required.
+  Requires ONNX Runtime shared library (libonnxruntime.so) at runtime.
+  Memory footprint: ~265 MB additional RSS vs standard build.
+homepage: https://github.com/izm1chael/MailHook
+license: MIT
+
+overrides:
+  deb:
+    depends:
+      - clamav-daemon
+      - clamav-freshclam
+      - rspamd
+  rpm:
+    depends:
+      - clamd
+      - rspamd
+
+contents:
+  # AI-enabled binary
+  - src: "${BINARY_PATH}"
+    dst: /usr/local/bin/mailhook
+    file_info:
+      mode: 0755
+
+  # Systemd unit (identical to standard package)
+  - src: packaging/mailhook.service
+    dst: /lib/systemd/system/mailhook.service
+
+  # AI-specific environment file
+  - src: packaging/mailhook-ai.env
+    dst: /etc/mailhook/mailhook.env
+    type: config|noreplace
+
+  # Example IMAP config
+  - src: config.example.yaml
+    dst: /etc/mailhook/config.yaml
+    type: config|noreplace
+
+  # Runtime directories
+  - dst: /var/lib/mailhook
+    type: dir
+    file_info:
+      owner: mailhook
+      group: mailhook
+      mode: 0750
+
+  - dst: /var/lib/mailhook/emls
+    type: dir
+    file_info:
+      owner: mailhook
+      group: mailhook
+      mode: 0750
+
+  - dst: /var/lib/mailhook/rules
+    type: dir
+    file_info:
+      owner: mailhook
+      group: mailhook
+      mode: 0750
+
+  - dst: /var/cache/mailhook
+    type: dir
+    file_info:
+      owner: mailhook
+      group: mailhook
+      mode: 0750
+
+  - dst: /var/cache/mailhook/feeds
+    type: dir
+    file_info:
+      owner: mailhook
+      group: mailhook
+      mode: 0750
+
+  # Rspamd tuning
+  - src: rspamd-config/local.d/worker-normal.inc
+    dst: /etc/rspamd/local.d/worker-normal.inc
+    type: config|noreplace
+
+  - src: rspamd-config/local.d/classifier-bayes.conf
+    dst: /etc/rspamd/local.d/classifier-bayes.conf
+    type: config|noreplace
+
+scripts:
+  postinstall: packaging/scripts/postinstall.sh
+  preremove: packaging/scripts/preremove.sh

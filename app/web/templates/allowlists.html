@@ -1,0 +1,233 @@
+{{define "allowlists.html"}}<!DOCTYPE html>
+<html lang="en">
+<head>{{template "head" .}}</head>
+<body class="bg-gray-100 text-gray-900 min-h-screen dark:bg-gray-900 dark:text-gray-100" x-data="tabPanel">
+{{template "nav" .}}
+<main class="max-w-5xl mx-auto px-4 py-6">
+
+  <h1 class="text-xl font-semibold text-gray-900 mb-5">Allow &amp; Block Lists</h1>
+
+  <div class="flex gap-2 mb-5">
+    <button @click="setTabWhitelist"
+      :class="tabWhitelistClass"
+      class="px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+      Whitelist
+    </button>
+    <button @click="setTabBlocklist"
+      :class="tabBlocklistClass"
+      class="px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+      Blocklist
+    </button>
+  </div>
+
+  <!-- Whitelist -->
+  <div x-show="onWhitelist" class="bg-white rounded-xl shadow-sm p-5" x-data="whitelistForm">
+    <p class="text-sm text-gray-500 mb-4">
+      Whitelisted senders are never quarantined. Use a full address
+      (<code class="bg-gray-100 px-1 rounded">user@example.com</code>) or a domain
+      (<code class="bg-gray-100 px-1 rounded">@example.com</code>).
+      Enable <strong>bypass scan</strong> to skip all scanning; disable it to scan but always deliver.
+    </p>
+
+    <div class="flex flex-wrap gap-2 mb-4 items-end">
+      <input x-model="entry" type="text" placeholder="user@example.com or @domain.com"
+        class="flex-1 min-w-48 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+      <input x-model="reason" type="text" placeholder="Reason (optional)"
+        class="w-40 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+      <label class="flex items-center gap-1 text-sm text-gray-700 cursor-pointer">
+        <input type="checkbox" x-model="bypassScan" class="rounded"> Bypass scan
+      </label>
+      <button @click="add" :disabled="submitting"
+        class="bg-gray-900 hover:bg-gray-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+        Add
+      </button>
+    </div>
+    <p x-show="err" x-text="err" class="text-red-600 text-sm mb-3"></p>
+
+    <!-- Whitelist entries -->
+    <div class="divide-y divide-gray-100">
+      {{range .Whitelist}}
+      <div class="flex items-center justify-between py-2.5">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-mono text-sm text-gray-800">{{.Entry}}</span>
+          <span class="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{{.EntryType}}</span>
+          {{if .BypassScan}}<span class="text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">bypass scan</span>{{end}}
+          {{if .AddedReason}}<span class="text-xs text-gray-400">— {{.AddedReason}}</span>{{end}}
+        </div>
+        <button data-entry-id="{{.ID}}" @click="delFromEvent"
+          class="text-red-500 hover:text-red-700 text-xs font-medium ml-4 flex-shrink-0">Delete</button>
+      </div>
+      {{else}}
+      <p class="text-gray-400 text-sm py-2">No whitelist entries yet. Use the form above to add entries.</p>
+      {{end}}
+    </div>
+
+    <!-- Bulk import -->
+    <details class="mt-4" x-data="whitelistBulk">
+      <summary class="text-sm text-gray-500 cursor-pointer mt-1 hover:text-gray-700">Bulk import…</summary>
+      <div class="mt-3 space-y-2">
+        <textarea x-model="bulk" rows="5" placeholder="One entry per line. Lines starting with # are ignored."
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gray-900"></textarea>
+        <div class="flex items-center gap-3">
+          <label class="flex items-center gap-1 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" x-model="bypassScan" class="rounded"> Bypass scan
+          </label>
+          <button @click="submit" :disabled="submitting"
+            class="bg-gray-900 hover:bg-gray-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            Import
+          </button>
+        </div>
+        <p x-show="err" x-text="err" class="text-red-600 text-sm"></p>
+      </div>
+    </details>
+  </div>
+
+  <!-- Blocklist -->
+  <div x-show="onBlocklist" x-cloak class="bg-white rounded-xl shadow-sm p-5" x-data="blocklistForm">
+    <p class="text-sm text-gray-500 mb-4">
+      Blocklisted senders are immediately quarantined on arrival without scanning.
+    </p>
+
+    <div class="flex gap-2 mb-4 items-end">
+      <input x-model="entry" type="text" placeholder="user@example.com or @domain.com"
+        class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+      <input x-model="reason" type="text" placeholder="Reason (optional)"
+        class="w-40 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+      <button @click="add" :disabled="submitting"
+        class="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+        Add
+      </button>
+    </div>
+    <p x-show="err" x-text="err" class="text-red-600 text-sm mb-3"></p>
+
+    <!-- Blocklist entries -->
+    <div class="divide-y divide-gray-100">
+      {{range .Blocklist}}
+      <div class="flex items-center justify-between py-2.5">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-mono text-sm text-gray-800">{{.Entry}}</span>
+          <span class="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{{.EntryType}}</span>
+          {{if .AddedReason}}<span class="text-xs text-gray-400">— {{.AddedReason}}</span>{{end}}
+        </div>
+        <button data-entry-id="{{.ID}}" @click="delFromEvent"
+          class="text-red-500 hover:text-red-700 text-xs font-medium ml-4 flex-shrink-0">Delete</button>
+      </div>
+      {{else}}
+      <p class="text-gray-400 text-sm py-2">No blocklist entries yet. Use the form above to add entries.</p>
+      {{end}}
+    </div>
+
+    <!-- Bulk import -->
+    <details class="mt-4" x-data="blocklistBulk">
+      <summary class="text-sm text-gray-500 cursor-pointer mt-1 hover:text-gray-700">Bulk import…</summary>
+      <div class="mt-3 space-y-2">
+        <textarea x-model="bulk" rows="5" placeholder="One entry per line. Lines starting with # are ignored."
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gray-900"></textarea>
+        <div class="flex items-center gap-3">
+          <button @click="submit" :disabled="submitting"
+            class="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            Import
+          </button>
+        </div>
+        <p x-show="err" x-text="err" class="text-red-600 text-sm"></p>
+      </div>
+    </details>
+  </div>
+
+</main>
+{{template "scripts" .}}
+<script nonce="{{.Nonce}}">
+document.addEventListener('alpine:init', () => {
+Alpine.data('tabPanel', () => ({
+  tab: 'whitelist',
+  setTabWhitelist() { this.tab = 'whitelist'; },
+  setTabBlocklist() { this.tab = 'blocklist'; },
+  get onWhitelist() { return this.tab === 'whitelist'; },
+  get onBlocklist() { return this.tab === 'blocklist'; },
+  get tabWhitelistClass() { return this.tab === 'whitelist' ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 border border-gray-300'; },
+  get tabBlocklistClass() { return this.tab === 'blocklist' ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 border border-gray-300'; },
+}))
+
+Alpine.data('whitelistForm', () => ({
+  entry: '', reason: '', bypassScan: false, err: '', submitting: false,
+  async add() {
+    if (!this.entry) return;
+    this.submitting = true; this.err = '';
+    const r = await fetch('/api/whitelist', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrf()},
+      body: JSON.stringify({entry: this.entry, reason: this.reason, bypass_scan: this.bypassScan})
+    });
+    this.submitting = false;
+    if (r.ok) { window.location.reload(); } else { const j = await r.json(); this.err = j.error || 'Error'; }
+  },
+  async del(id) {
+    if (!confirm('Delete this entry?')) return;
+    await fetch('/api/whitelist/' + id, {method: 'DELETE', headers: {'X-CSRF-Token': csrf()}});
+    window.location.reload();
+  },
+  delFromEvent(event) { this.del(Number(event.currentTarget.dataset.entryId)); },
+}))
+
+Alpine.data('whitelistBulk', () => ({
+  bulk: '', submitting: false, err: '', bypassScan: false,
+  async submit() {
+    if (!this.bulk.trim()) return;
+    this.submitting = true; this.err = '';
+    const r = await fetch('/api/allowlists/bulk-import', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrf()},
+      body: JSON.stringify({list: 'whitelist', entries: this.bulk, bypass_scan: this.bypassScan})
+    });
+    this.submitting = false;
+    if (r.ok) {
+      const j = await r.json();
+      alert('Imported ' + j.imported + ', skipped ' + j.skipped);
+      window.location.reload();
+    } else { const j = await r.json(); this.err = j.error || 'Error'; }
+  }
+}))
+
+Alpine.data('blocklistForm', () => ({
+  entry: '', reason: '', err: '', submitting: false,
+  async add() {
+    if (!this.entry) return;
+    this.submitting = true; this.err = '';
+    const r = await fetch('/api/blocklist', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrf()},
+      body: JSON.stringify({entry: this.entry, reason: this.reason})
+    });
+    this.submitting = false;
+    if (r.ok) { window.location.reload(); } else { const j = await r.json(); this.err = j.error || 'Error'; }
+  },
+  async del(id) {
+    if (!confirm('Delete this entry?')) return;
+    await fetch('/api/blocklist/' + id, {method: 'DELETE', headers: {'X-CSRF-Token': csrf()}});
+    window.location.reload();
+  },
+  delFromEvent(event) { this.del(Number(event.currentTarget.dataset.entryId)); },
+}))
+
+Alpine.data('blocklistBulk', () => ({
+  bulk: '', submitting: false, err: '',
+  async submit() {
+    if (!this.bulk.trim()) return;
+    this.submitting = true; this.err = '';
+    const r = await fetch('/api/allowlists/bulk-import', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrf()},
+      body: JSON.stringify({list: 'blocklist', entries: this.bulk})
+    });
+    this.submitting = false;
+    if (r.ok) {
+      const j = await r.json();
+      alert('Imported ' + j.imported + ', skipped ' + j.skipped);
+      window.location.reload();
+    } else { const j = await r.json(); this.err = j.error || 'Error'; }
+  }
+}))
+})
+</script>
+</body>
+</html>{{end}}

@@ -1,0 +1,2 @@
+#!/command/with-contenv sh
+exec /command/s6-setuidgid mailhook /usr/local/bin/mailhook

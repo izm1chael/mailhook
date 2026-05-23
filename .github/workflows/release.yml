@@ -1,0 +1,462 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write    # create GitHub Releases
+  packages: write    # push to GHCR
+
+jobs:
+  # ─── Pre-release security gate ───────────────────────────────────────────────
+  security:
+    name: Security scan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: app/go.mod
+          cache: true
+          cache-dependency-path: app/go.sum
+
+      - name: govulncheck
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-file: app/go.mod
+          work-dir: app
+
+      - name: gosec
+        uses: securego/gosec@master
+        with:
+          args: ./app/...
+
+      - name: trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          exit-code: '1'
+          severity: HIGH,CRITICAL
+
+  # ─── Native binary + package build per architecture ──────────────────────────
+  build:
+    needs: [security]
+    name: Build & Package (${{ matrix.goarch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            goarch: amd64
+            nfpm_arch: amd64
+          - runner: ubuntu-24.04-arm
+            goarch: arm64
+            nfpm_arch: arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: app/go.mod
+          cache: true
+          cache-dependency-path: app/go.sum
+
+      - name: Install build & packaging dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libyara-dev libssl-dev
+          echo 'deb [trusted=yes] https://repo.goreleaser.com/apt/ /' \
+            | sudo tee /etc/apt/sources.list.d/goreleaser.list
+          sudo apt-get update -qq
+          sudo apt-get install -y nfpm
+
+      - name: Set version
+        id: version
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build binary
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p bin
+          cd app
+          CGO_ENABLED=1 go build \
+            -tags yara_static \
+            -trimpath \
+            -ldflags="-s -w -X main.version=${VERSION}" \
+            -o "../bin/mailhook" \
+            .
+
+      - name: Run tests
+        run: cd app && CGO_ENABLED=1 go test ./... -timeout 60s
+
+      - name: Package (deb + rpm)
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          NFPM_ARCH: ${{ matrix.nfpm_arch }}
+          BINARY_PATH: ./bin/mailhook
+        run: |
+          mkdir -p dist
+          nfpm package \
+            --config packaging/nfpm.yaml \
+            --packager deb \
+            --target dist/
+          nfpm package \
+            --config packaging/nfpm.yaml \
+            --packager rpm \
+            --target dist/
+
+      - name: Rename binary with arch suffix
+        env:
+          GOARCH: ${{ matrix.goarch }}
+        run: mv bin/mailhook "bin/mailhook-linux-${GOARCH}"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.goarch }}
+          path: |
+            bin/mailhook-linux-${{ matrix.goarch }}
+            dist/*.deb
+            dist/*.rpm
+          if-no-files-found: error
+
+  # ─── AI binary + package build per architecture ──────────────────────────────
+  build-ai:
+    needs: [security]
+    name: Build & Package AI (${{ matrix.goarch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            goarch: amd64
+            onnx_arch: x64
+            nfpm_arch: amd64
+          - runner: ubuntu-24.04-arm
+            goarch: arm64
+            onnx_arch: arm64
+            nfpm_arch: arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: app/go.mod
+          cache: true
+          cache-dependency-path: app/go.sum
+
+      - name: Install build & packaging dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libyara-dev libssl-dev python3 python3-pip curl
+          echo 'deb [trusted=yes] https://repo.goreleaser.com/apt/ /' \
+            | sudo tee /etc/apt/sources.list.d/goreleaser.list
+          sudo apt-get update -qq
+          sudo apt-get install -y nfpm
+
+      - name: Install ONNX Runtime
+        env:
+          ONNX_VERSION: "1.18.0"
+          ONNX_ARCH: ${{ matrix.onnx_arch }}
+        run: |
+          curl -fsSL \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${ONNX_VERSION}/onnxruntime-linux-${ONNX_ARCH}-${ONNX_VERSION}.tgz" \
+            | sudo tar xz --strip-components=1 -C /usr/local
+          sudo ldconfig
+
+      - name: Set version
+        id: version
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore AI models cache
+        id: cache-models
+        uses: actions/cache@v4
+        with:
+          path: app/scanners/models
+          key: ai-models-bert-v2.4.1-dga-1M-${{ matrix.goarch }}
+          restore-keys: ai-models-bert-v2.4.1-dga-1M-${{ matrix.goarch }}
+
+      - name: Download Tranco greylist
+        run: make models-dl
+
+      - name: Export DistilBERT to ONNX
+        if: steps.cache-models.outputs.cache-hit != 'true'
+        run: make models-bert
+
+      - name: Export DGA CNN to ONNX
+        if: steps.cache-models.outputs.cache-hit != 'true'
+        run: make models-dga
+
+      - name: Build AI binary
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p bin
+          cd app
+          CGO_ENABLED=1 \
+            CGO_CFLAGS="-I/usr/local/include/onnxruntime" \
+            CGO_LDFLAGS="-L/usr/local/lib -lonnxruntime" \
+            go build \
+            -tags "yara_static ai" \
+            -trimpath \
+            -ldflags="-s -w -X main.version=${VERSION}" \
+            -o "../bin/mailhook-ai" \
+            .
+
+      - name: Package AI (deb + rpm)
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          NFPM_ARCH: ${{ matrix.nfpm_arch }}
+          BINARY_PATH: ./bin/mailhook-ai
+        run: |
+          mkdir -p dist
+          nfpm package \
+            --config packaging/nfpm-ai.yaml \
+            --packager deb \
+            --target dist/
+          nfpm package \
+            --config packaging/nfpm-ai.yaml \
+            --packager rpm \
+            --target dist/
+
+      - name: Rename binary with arch suffix
+        env:
+          GOARCH: ${{ matrix.goarch }}
+        run: mv bin/mailhook-ai "bin/mailhook-ai-linux-${GOARCH}"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-ai-${{ matrix.goarch }}
+          path: |
+            bin/mailhook-ai-linux-${{ matrix.goarch }}
+            dist/*.deb
+            dist/*.rpm
+          if-no-files-found: error
+
+  # ─── Multi-arch Docker image ──────────────────────────────────────────────────
+  docker:
+    needs: [security]
+    name: Docker (multi-arch)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/izm1chael/mailhook
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Set build version
+        id: bv
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: echo "VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./app
+          file: ./app/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ steps.bv.outputs.VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+
+  # ─── All-in-one Docker image ─────────────────────────────────────────────────
+  docker-allinone:
+    needs: [security]
+    name: Docker all-in-one (multi-arch)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/izm1chael/mailhook
+          flavor: |
+            suffix=-allinone,onlatest=true
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Set build version
+        id: bv
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: echo "VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./app/Dockerfile.allinone
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ steps.bv.outputs.VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ─── AI Docker image (multi-arch) ────────────────────────────────────────────
+  docker-ai:
+    needs: [security]
+    name: Docker AI (multi-arch)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/izm1chael/mailhook
+          flavor: |
+            suffix=-ai,onlatest=true
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Set build version
+        id: bv
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: echo "VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore AI models cache (amd64 — base for QEMU cross-build)
+        id: cache-models
+        uses: actions/cache@v4
+        with:
+          path: app/scanners/models
+          key: ai-models-distilbert-v2.4.1-amd64
+          restore-keys: ai-models-distilbert-v2.4.1-amd64
+
+      - name: Install Python (for models-bert if cache miss)
+        if: steps.cache-models.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y python3 python3-pip
+
+      - name: Download Tranco greylist
+        run: make models-dl
+
+      - name: Export DistilBERT to ONNX
+        if: steps.cache-models.outputs.cache-hit != 'true'
+        run: make models-bert
+
+      - name: Export DGA CNN to ONNX
+        if: steps.cache-models.outputs.cache-hit != 'true'
+        run: make models-dga
+
+      - name: Build and push AI image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./app
+          file: ./app/Dockerfile.ai
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ steps.bv.outputs.VERSION }}
+          cache-from: type=gha,scope=ai
+          cache-to: type=gha,scope=ai,mode=max
+
+  # ─── GitHub Release ───────────────────────────────────────────────────────────
+  release:
+    name: GitHub Release
+    needs: [build, build-ai, docker, docker-allinone, docker-ai]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Flatten artifact tree
+        run: |
+          mkdir -p release
+          find artifacts/ -type f \
+            \( -name "*.deb" -o -name "*.rpm" \
+               -o -name "mailhook-linux-*" \
+               -o -name "mailhook-ai-linux-*" \) \
+            -exec cp {} release/ \;
+          ls -lh release/
+
+      - name: Create checksums
+        run: |
+          cd release
+          sha256sum * > SHA256SUMS
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "MailHook ${GITHUB_REF_NAME}" \
+            --notes-file .github/release-notes-template.md \
+            release/*

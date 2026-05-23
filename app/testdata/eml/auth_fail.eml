@@ -1,0 +1,16 @@
+From: Spoofed Sender <ceo@bigcorp.example>
+To: Victim <victim@mailhook.test>
+Subject: Urgent: Wire Transfer Request
+Date: Wed, 03 Jan 2024 14:00:00 +0000
+Message-ID: <test-spoof-001@attacker.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.mailhook.test;
+  spf=fail smtp.mailfrom=attacker.example;
+  dkim=fail header.d=bigcorp.example;
+  dmarc=fail header.from=bigcorp.example
+Received: from attacker.example ([45.33.32.156])
+  by mx.mailhook.test with ESMTP; Wed, 03 Jan 2024 14:00:00 +0000
+
+Dear Finance Team,
+Please wire $50,000 immediately. This is urgent.

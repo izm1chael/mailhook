@@ -1,0 +1,156 @@
+# docker-compose.bench.yml — Two MailHook instances for Standard vs AI benchmarking
+#
+# Usage:
+#   docker compose -f docker-compose.bench.yml up -d --build
+#   make bench-live          # run bench tool against both instances
+#
+# Both instances share the same rspamd + ClamAV backend so scanner results are
+# identical except for the ONNX scanner (skip in standard, real inference in AI).
+#
+# Exposes:
+#   localhost:8080 — standard build  (no ONNX)
+#   localhost:8081 — AI build        (DistilBERT + DGA CNN)
+#
+# POST /api/scan on both instances is IP-unrestricted within the bench network.
+# Set MAILHOOK_ADMIN_PASSWORD_BCRYPT in your .env before starting.
+
+networks:
+  bench-backend:
+    driver: bridge
+
+services:
+  rspamd:
+    image: rspamd/rspamd:4.0.1
+    container_name: bench-rspamd
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64m
+      - /run:mode=0755,size=16m
+      - /var/log/rspamd:mode=0755,size=32m
+    volumes:
+      - ./rspamd-config/local.d:/etc/rspamd/local.d:ro
+      - bench-rspamd-data:/var/lib/rspamd
+    networks:
+      - bench-backend
+    healthcheck:
+      test: ["CMD-SHELL", "rspamadm control stat || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  clamav:
+    image: clamav/clamav:stable
+    container_name: bench-clamav
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=256m
+      - /run:mode=0755,size=16m
+      - /var/log/clamav:mode=0755,size=32m
+    volumes:
+      - bench-clamav-db:/var/lib/clamav
+    networks:
+      - bench-backend
+    deploy:
+      resources:
+        limits:
+          memory: 3g
+    healthcheck:
+      test: ["CMD-SHELL", "clamdcheck.sh || (echo 'PING' | nc -w 3 localhost 3310 | grep -q PONG)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  mailhook-std:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+      args:
+        VERSION: bench-std
+    container_name: bench-mailhook-std
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      MAILHOOK_RSPAMD_URL: http://rspamd:11333
+      MAILHOOK_CLAMAV_ADDR: clamav:3310
+      MAILHOOK_DATA_DIR: /data
+      MAILHOOK_FEEDS_CACHE_DIR: /feeds-cache
+      MAILHOOK_YARA_RULES_DIR: /rules
+      # Allow /api/scan from any IP within the Docker network and host
+      MAILHOOK_METRICS_ALLOWED_CIDRS: "0.0.0.0/0"
+      MAILHOOK_ADMIN_USER: admin
+      MAILHOOK_ADMIN_PASSWORD_BCRYPT: "${MAILHOOK_ADMIN_PASSWORD_BCRYPT}"
+      MAILHOOK_LOG_LEVEL: warn
+    volumes:
+      - bench-std-data:/data
+      - bench-feeds:/feeds-cache
+      - ./rules:/rules:ro
+    networks:
+      - bench-backend
+    depends_on:
+      rspamd:
+        condition: service_healthy
+      clamav:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  mailhook-ai:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.ai
+      args:
+        VERSION: bench-ai
+    container_name: bench-mailhook-ai
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:8080"
+    environment:
+      MAILHOOK_RSPAMD_URL: http://rspamd:11333
+      MAILHOOK_CLAMAV_ADDR: clamav:3310
+      MAILHOOK_DATA_DIR: /data
+      MAILHOOK_FEEDS_CACHE_DIR: /feeds-cache
+      MAILHOOK_YARA_RULES_DIR: /rules
+      MAILHOOK_METRICS_ALLOWED_CIDRS: "0.0.0.0/0"
+      MAILHOOK_ADMIN_USER: admin
+      MAILHOOK_ADMIN_PASSWORD_BCRYPT: "${MAILHOOK_ADMIN_PASSWORD_BCRYPT}"
+      MAILHOOK_ONNX_BERT_THRESHOLD: "0.85"
+      MAILHOOK_ONNX_DGA_THRESHOLD: "0.80"
+      MAILHOOK_LOG_LEVEL: warn
+    volumes:
+      - bench-ai-data:/data
+      - bench-feeds:/feeds-cache
+      - ./rules:/rules:ro
+    networks:
+      - bench-backend
+    depends_on:
+      rspamd:
+        condition: service_healthy
+      clamav:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1.5g
+
+volumes:
+  bench-rspamd-data:
+  bench-clamav-data:
+  bench-clamav-db:
+  bench-std-data:
+  bench-ai-data:
+  bench-feeds:

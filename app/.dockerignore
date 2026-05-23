@@ -1,0 +1,20 @@
+# Prevent secrets and local state from entering the Docker build context
+.env
+.env.*
+*.env
+
+# Development and test data
+data/
+testdata/
+*_test.go
+
+# Version control
+.git/
+.gitignore
+
+# Local build outputs
+bin/
+
+# CI/editor artifacts
+.github/
+*.log

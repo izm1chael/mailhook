@@ -1,0 +1,25 @@
+From: newsletters@retailupdates.com
+To: recipient@mailhook.test
+Subject: Your account requires attention
+Date: Fri, 16 Feb 2024 11:30:00 +0000
+Message-ID: <dga-test-001@retailupdates.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Authentication-Results: mx.mailhook.test;
+  spf=pass smtp.mailfrom=retailupdates.com;
+  dkim=pass header.d=retailupdates.com;
+  dmarc=pass header.from=retailupdates.com
+Received: from mail.retailupdates.com ([185.220.101.45])
+  by mx.mailhook.test with ESMTPS; Fri, 16 Feb 2024 11:30:01 +0000
+
+<html>
+<body>
+<p>Dear valued customer,</p>
+<p>We noticed unusual activity on your account. Please verify your details
+by clicking the link below.</p>
+<p><a href="https://xvk9m2qp.top/verify/account">Verify Account</a></p>
+<p>If the above link does not work, copy this URL into your browser:
+https://m8nqz3rj.xyz/secure/login?ref=customer</p>
+<p>Thank you for your continued business.</p>
+</body>
+</html>
