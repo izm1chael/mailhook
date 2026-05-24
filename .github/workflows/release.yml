@@ -158,7 +158,7 @@ jobs:
             nfpm_arch: amd64
           - runner: ubuntu-24.04-arm
             goarch: arm64
-            onnx_arch: arm64
+            onnx_arch: aarch64
             nfpm_arch: arm64
 
     steps:
