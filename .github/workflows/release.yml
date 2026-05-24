@@ -444,10 +444,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all artifacts
+      # Only the package artifacts — not the *.dockerbuild build records that
+      # docker/build-push-action uploads, which download-artifact@v4 fails to
+      # extract ("Artifact download failed after 5 retries").
+      - name: Download package artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts/
+          pattern: packages-*
 
       - name: Flatten artifact tree
         run: |
