@@ -106,7 +106,7 @@ models-dl:
 # Downloads Reynier/dga-cnn weights from HuggingFace and exports to ONNX.
 # Files are embedded in the binary — run before 'make build-ai'.
 models-dga:
-	pip install --quiet torch huggingface_hub
+	pip install --quiet torch huggingface_hub onnx onnxscript
 	python3 scripts/export_dga_onnx.py --outdir $(APP_DIR)/scanners/models/dga-cnn
 
 # Export DistilBERT phishing model to ONNX (requires Python + optimum[onnxruntime]).

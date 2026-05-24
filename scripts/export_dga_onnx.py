@@ -68,6 +68,9 @@ def main():
     dummy = torch.zeros(1, MAXLEN, dtype=torch.long)
     out_path = outdir / "model.onnx"
 
+    # dynamo=False forces the legacy TorchScript exporter: recent torch defaults
+    # to the dynamo exporter (which pulls in onnxscript and may rename graph I/O),
+    # but onnx_ai.go binds the exact tensor names below, so we need the legacy path.
     torch.onnx.export(
         model,
         dummy,
@@ -75,7 +78,8 @@ def main():
         input_names=["domain_chars"],
         output_names=["logits"],
         dynamic_axes={"domain_chars": {0: "batch"}, "logits": {0: "batch"}},
-        opset_version=14,
+        opset_version=18,
+        dynamo=False,
     )
 
     size_kb = out_path.stat().st_size // 1024

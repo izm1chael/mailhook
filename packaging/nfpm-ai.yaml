@@ -30,8 +30,8 @@ overrides:
       - rspamd
 
 contents:
-  # AI-enabled binary
-  - src: "${BINARY_PATH}"
+  # AI-enabled binary (built to ./bin/mailhook-ai by the release workflow)
+  - src: ./bin/mailhook-ai
     dst: /usr/local/bin/mailhook
     file_info:
       mode: 0755

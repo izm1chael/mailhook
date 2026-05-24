@@ -28,8 +28,8 @@ overrides:
       - rspamd
 
 contents:
-  # Main binary
-  - src: "${BINARY_PATH}"
+  # Main binary (built to ./bin/mailhook by the release workflow)
+  - src: ./bin/mailhook
     dst: /usr/local/bin/mailhook
     file_info:
       mode: 0755
