@@ -6,7 +6,7 @@ require (
 	github.com/PuerkitoBio/goquery v1.10.3
 	github.com/emersion/go-imap/v2 v2.0.0-beta.5
 	github.com/emersion/go-message v0.18.2
-	github.com/fsnotify/fsnotify v1.8.0
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/hillu/go-yara/v4 v4.3.3
 	github.com/makiuchi-d/gozxing v0.1.0
 	github.com/microcosm-cc/bluemonday v1.0.27
