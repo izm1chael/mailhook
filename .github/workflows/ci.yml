@@ -19,9 +19,9 @@ jobs:
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: app/go.mod
           cache: true
@@ -42,9 +42,9 @@ jobs:
     name: Build check
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: app/go.mod
           cache: true
@@ -70,15 +70,18 @@ jobs:
   security:
     name: Security scan
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
     # CGO must be enabled so the scanners can load the go-yara cgo package.
     # Without this (and libyara-dev below) govulncheck/gosec fail with
     # "could not import C (no metadata for C)".
     env:
       CGO_ENABLED: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: app/go.mod
           cache: true
@@ -90,7 +93,7 @@ jobs:
           sudo apt-get install -y libyara-dev libssl-dev
 
       - name: govulncheck
-        uses: golang/govulncheck-action@v1
+        uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1
         with:
           go-version-file: app/go.mod
           work-dir: app
@@ -108,8 +111,20 @@ jobs:
           go install github.com/securego/gosec/v2/cmd/gosec@latest
           cd app && gosec -exclude=G104 -exclude-dir=cmd -exclude-dir=testserver ./...
 
+      # Second pass in SARIF format for Code Scanning. Runs after the text-output
+      # pass above so a failure there blocks the job before we attempt the upload.
+      - name: gosec (SARIF)
+        run: |
+          cd app && gosec -exclude=G104 -exclude-dir=cmd -exclude-dir=testserver -fmt sarif -out ../gosec-results.sarif ./... || true
+
+      - name: Upload gosec SARIF
+        uses: github/codeql-action/upload-sarif@03e4368ac7daa2bd82b3e85262f3bf87ee112f57 # v3
+        with:
+          sarif_file: gosec-results.sarif
+          category: gosec
+
       - name: trivy
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8  # v0.36.0
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -136,9 +151,9 @@ jobs:
     name: Build check (AI)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: app/go.mod
           cache: true
