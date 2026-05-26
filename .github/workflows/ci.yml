@@ -108,7 +108,7 @@ jobs:
       # Remaining production false positives are annotated inline with `#nosec Gxxx`.
       - name: gosec
         run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.26.1
           cd app && gosec -exclude=G104 -exclude-dir=cmd -exclude-dir=testserver ./...
 
       # Second pass in SARIF format for Code Scanning. Runs after the text-output
