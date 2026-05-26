@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/izm1chael/mailhook/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/izm1chael/mailhook/actions/workflows/ci.yml)
 [![Release](https://github.com/izm1chael/mailhook/actions/workflows/release.yml/badge.svg)](https://github.com/izm1chael/mailhook/actions/workflows/release.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/izm1chael/mailhook/badge)](https://scorecard.dev/viewer/?uri=github.com/izm1chael/mailhook)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](app/go.mod)
 
