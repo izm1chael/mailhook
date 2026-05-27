@@ -21,19 +21,20 @@ type feed interface {
 
 // Manager holds the in-memory URL/domain index and refreshes it periodically.
 type Manager struct {
-	mu         sync.RWMutex
-	index      map[string]struct{}            // normalized host+path → present
-	feedURLs   map[string]map[string]struct{} // per-feed URL sets for amnesia protection
-	feedCounts map[string]int                 // per-feed entry counts for health/metrics
-	lastLoaded time.Time
-	cacheDir   string
-	feeds      []feed
-	hashFeeds  []hashFeed
-	gdb        *db.DB
-	log        *slog.Logger
+	mu           sync.RWMutex
+	index        map[string]struct{}            // normalized host+path → present
+	feedURLs     map[string]map[string]struct{} // per-feed URL sets for amnesia protection
+	feedCounts   map[string]int                 // per-feed entry counts for health/metrics
+	lastLoaded   time.Time
+	cacheDir     string
+	feeds        []feed
+	hashFeeds    []hashFeed
+	gdb          *db.DB
+	log          *slog.Logger
+	phishTankKey string
 }
 
-// New creates a Manager that loads URLhaus, OpenPhish, and PhishTank feeds.
+// New creates a Manager that loads URLhaus, OpenPhish, PhishTank, and ThreatFox feeds.
 func New(cacheDir string, gdb *db.DB, log *slog.Logger) *Manager {
 	m := &Manager{
 		index:      make(map[string]struct{}),
@@ -46,13 +47,24 @@ func New(cacheDir string, gdb *db.DB, log *slog.Logger) *Manager {
 	m.feeds = []feed{
 		urlhausFeed{},
 		openphishFeed{},
-		phishtankFeed{},
+		phishtankFeed{keyFn: func() string {
+			m.mu.RLock()
+			defer m.mu.RUnlock()
+			return m.phishTankKey
+		}},
 		threatfoxFeed{},
 	}
 	m.hashFeeds = []hashFeed{
 		malwareBazaarFeed{},
 	}
 	return m
+}
+
+// SetPhishTankKey updates the PhishTank API key used on the next feed refresh.
+func (m *Manager) SetPhishTankKey(key string) {
+	m.mu.Lock()
+	m.phishTankKey = key
+	m.mu.Unlock()
 }
 
 // Refresh fetches all feeds and atomically rebuilds the in-memory index.

@@ -83,7 +83,8 @@
   <!-- 4. API Keys -->
   <div class="bg-white rounded-xl shadow-sm p-5" x-data="apiKeys"
     data-vt-ok="{{if .VTConfigured}}true{{else}}false{{end}}"
-    data-ip-ok="{{if .IPRepConfigured}}true{{else}}false{{end}}">
+    data-ip-ok="{{if .IPRepConfigured}}true{{else}}false{{end}}"
+    data-pt-ok="{{if .PhishTankConfigured}}true{{else}}false{{end}}">
     <h2 class="font-semibold text-gray-800 mb-1">API keys</h2>
     <p class="text-sm text-gray-500 mb-4">Stored in the database and applied immediately. Leave a field blank to keep the existing key.</p>
     <div class="space-y-4 mb-4">
@@ -110,6 +111,18 @@
           autocomplete="new-password"
           class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
         <p class="text-xs text-gray-400 mt-1">Sender IP reputation scoring. Env: MAILHOOK_ABUSEIPDB_KEY</p>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">
+          PhishTank application key
+          <span x-cloak class="ml-2 text-xs font-normal px-1.5 py-0.5 rounded"
+            :class="ptStatusClass"
+            x-text="ptStatusLabel"></span>
+        </label>
+        <input type="password" x-model="ptKey" placeholder="Enter new key to update..."
+          autocomplete="new-password"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+        <p class="text-xs text-gray-400 mt-1">Phishing URL feed. Without a key the feed is rate-limited. Register at phishtank.com. Env: MAILHOOK_PHISHTANK_KEY</p>
       </div>
     </div>
     <div class="flex items-center gap-3">
@@ -489,15 +502,18 @@ Alpine.data('thresholds', () => ({
 }))
 
 Alpine.data('apiKeys', () => ({
-  vtKey: '', ipKey: '', vtOk: false, ipOk: false, saving: false, flash: '', err: '',
+  vtKey: '', ipKey: '', ptKey: '', vtOk: false, ipOk: false, ptOk: false, saving: false, flash: '', err: '',
   get vtStatusClass() { return this.vtOk ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'; },
   get vtStatusLabel() { return this.vtOk ? 'configured' : 'not set'; },
   get ipStatusClass() { return this.ipOk ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'; },
   get ipStatusLabel() { return this.ipOk ? 'configured' : 'not set'; },
+  get ptStatusClass() { return this.ptOk ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'; },
+  get ptStatusLabel() { return this.ptOk ? 'configured' : 'not set'; },
   get saveLabel() { return this.saving ? 'Saving...' : 'Save API keys'; },
   init() {
     this.vtOk = this.$el.dataset.vtOk === 'true';
     this.ipOk = this.$el.dataset.ipOk === 'true';
+    this.ptOk = this.$el.dataset.ptOk === 'true';
   },
   async save() {
     this.saving = true; this.flash = ''; this.err = '';
@@ -505,12 +521,12 @@ Alpine.data('apiKeys', () => ({
       const r = await fetch('/api/settings/api-keys', {
         method: 'POST',
         headers: {'Content-Type':'application/json','X-CSRF-Token':csrf()},
-        body: JSON.stringify({vt_api_key: this.vtKey.trim(), abuseipdb_key: this.ipKey.trim()})
+        body: JSON.stringify({vt_api_key: this.vtKey.trim(), abuseipdb_key: this.ipKey.trim(), phishtank_key: this.ptKey.trim()})
       });
       if (!r.ok) { const d = await r.json(); throw new Error(d.error || r.status); }
       const d = await r.json();
-      this.vtOk = d.vt_configured; this.ipOk = d.ipRep_configured;
-      this.vtKey = ''; this.ipKey = '';
+      this.vtOk = d.vt_configured; this.ipOk = d.ipRep_configured; this.ptOk = d.phishTank_configured;
+      this.vtKey = ''; this.ipKey = ''; this.ptKey = '';
       this.flash = 'Saved';
       setTimeout(() => this.flash = '', 3000);
     } catch(e) { this.err = e.message; } finally { this.saving = false; }
@@ -661,7 +677,7 @@ Alpine.data('imapAccounts', () => {
         const r = await fetch('/api/settings/accounts/test', {
           method: 'POST',
           headers: {'Content-Type':'application/json','X-CSRF-Token':csrf()},
-          body: JSON.stringify({host:this.form.host, port:this.form.port, user:this.form.user, pass:this.form.pass})
+          body: JSON.stringify({name:this.editName, host:this.form.host, port:this.form.port, user:this.form.user, pass:this.form.pass, tls_skip_verify:this.form.tls_skip_verify})
         });
         if (!r.ok) { const d = await r.json(); throw new Error(d.error || r.status); }
         this.formFlash = 'Connection successful';
