@@ -137,6 +137,7 @@ type yamlFile struct {
 		Mailbox       string `yaml:"mailbox"`
 		Quarantine    string `yaml:"quarantine"`
 		TLSSkipVerify bool   `yaml:"tls_skip_verify"`
+		BackfillDays  int    `yaml:"backfill_days"`
 	} `yaml:"accounts"`
 }
 
@@ -320,6 +321,7 @@ func (c *Config) loadYAML(path string) error {
 			Mailbox:       a.Mailbox,
 			Quarantine:    a.Quarantine,
 			TLSSkipVerify: a.TLSSkipVerify,
+			BackfillDays:  a.BackfillDays,
 		}
 		if ac.Port == 0 {
 			ac.Port = 993

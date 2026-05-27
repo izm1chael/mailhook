@@ -131,21 +131,33 @@ func (b *BackfillScanner) scan(ctx context.Context) error {
 	b.log.Info("backfill: scanning new messages",
 		"account", b.account.Name, "count", len(newUIDs))
 
-	// Fetch full bodies with PEEK so we never mutate \Seen flags.
+	// Stream message bodies one at a time with PEEK (never mutates \Seen).
+	// Streaming via Next() instead of Collect() keeps memory proportional to
+	// dispatchSem concurrency (50 bodies) rather than the full mailbox size,
+	// which matters for backfill_days: -1 on a large inbox.
 	uidSet := imap.UIDSetNum(newUIDs...)
-	messages, err := c.Fetch(uidSet, &imap.FetchOptions{
+	fetchCmd := c.Fetch(uidSet, &imap.FetchOptions{
 		UID:         true,
 		BodySection: []*imap.FetchItemBodySection{{Peek: true}},
-	}).Collect()
-	if err != nil {
-		return fmt.Errorf("fetch: %w", err)
-	}
+	})
+	defer fetchCmd.Close() //nolint:errcheck
 
 	var wg sync.WaitGroup
-	for _, msg := range messages {
-		uid := uint32(msg.UID)
+	for {
+		msgData := fetchCmd.Next()
+		if msgData == nil {
+			break
+		}
+
+		buf, err := msgData.Collect()
+		if err != nil {
+			b.log.Warn("backfill: message collect failed", "account", b.account.Name, "err", err)
+			continue
+		}
+
+		uid := uint32(buf.UID)
 		var raw []byte
-		for _, section := range msg.BodySection {
+		for _, section := range buf.BodySection {
 			raw = section.Bytes
 			break
 		}
@@ -154,10 +166,14 @@ func (b *BackfillScanner) scan(ctx context.Context) error {
 			continue
 		}
 
+		// Acquire dispatch slot or abort cleanly on context cancellation.
+		// Must return (not break) so the goroutine is never launched without
+		// a slot — a bare break only exits the select and falls into wg.Add.
 		select {
 		case b.dispatchSem <- struct{}{}:
 		case <-ctx.Done():
-			break
+			wg.Wait()
+			return nil
 		}
 
 		wg.Add(1)
