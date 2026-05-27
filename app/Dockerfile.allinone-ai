@@ -3,7 +3,7 @@
 # Use for single-host deployments that want AI threat detection without separate containers.
 # For production, use docker-compose.yml (separate containers per service).
 #
-# Build:  docker build -f Dockerfile.allinone-ai -t mailhook:allinone-ai --build-arg VERSION=dev .
+# Build:  docker build -f app/Dockerfile.allinone-ai -t mailhook:allinone-ai --build-arg VERSION=dev .
 # Run:    docker run -d --name mailhook \
 #           -p 127.0.0.1:8080:8080 \
 #           -v mailhook-data:/var/lib/mailhook \
@@ -112,7 +112,8 @@ RUN set -eux; \
 
 # ONNX Runtime shared library (required at runtime by the AI scanner)
 COPY --from=builder /usr/local/lib/libonnxruntime.so* /usr/local/lib/
-RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/onnxruntime.conf && ldconfig
+RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/onnxruntime.conf && ldconfig && \
+    ln -sf /usr/local/lib/libonnxruntime.so /usr/local/lib/onnxruntime.so
 
 COPY --from=builder /out/mailhook /usr/local/bin/mailhook
 
