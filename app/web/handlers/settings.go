@@ -141,20 +141,20 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		scannerStates = append(scannerStates, scannerState{Name: s.Name(), Enabled: s.IsEnabled()})
 	}
 	web.Render(w, r, "settings.html", map[string]interface{}{
-		"CSRFToken":       csrfToken,
-		"SpamScore":       h.cfg.SpamScore,
-		"RejectScore":     h.cfg.RejectScore,
-		"NtfyURL":         h.cfg.NtfyURL,
-		"NtfyTopic":       h.cfg.NtfyTopic,
+		"CSRFToken":           csrfToken,
+		"SpamScore":           h.cfg.SpamScore,
+		"RejectScore":         h.cfg.RejectScore,
+		"NtfyURL":             h.cfg.NtfyURL,
+		"NtfyTopic":           h.cfg.NtfyTopic,
 		"VTConfigured":        h.cfg.VTAPIKey != "",
 		"IPRepConfigured":     h.cfg.AbuseIPDBKey != "",
 		"PhishTankConfigured": h.cfg.PhishTankKey != "",
-		"RspamdURL":       h.cfg.RspamdURL,
-		"ClamAVAddr":      h.cfg.ClamAVAddr,
-		"YARARulesDir":    h.cfg.YARARulesDir,
-		"DataDir":         h.cfg.DataDir,
-		"Nav":             "settings",
-		"Scanners":        scannerStates,
+		"RspamdURL":           h.cfg.RspamdURL,
+		"ClamAVAddr":          h.cfg.ClamAVAddr,
+		"YARARulesDir":        h.cfg.YARARulesDir,
+		"DataDir":             h.cfg.DataDir,
+		"Nav":                 "settings",
+		"Scanners":            scannerStates,
 	})
 }
 
@@ -782,4 +782,3 @@ func (h *SettingsHandler) TestAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
-
