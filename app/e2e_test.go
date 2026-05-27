@@ -221,7 +221,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	testRegistry.Add("test", nil, mProc)
 	actionsHandler := handlers.NewActionsHandler(gdb, store, testRegistry, mRspamd, log)
 	allowlistsHandler := handlers.NewAllowlistsHandler(gdb, authMiddleware, log)
-	settingsHandler := handlers.NewSettingsHandler(gdb, cfg, mFeeds, mYARA, notifier, nil, nil, nil, nil, nil, nil, nil, testRegistry, sessions, authMiddleware, log)
+	settingsHandler := handlers.NewSettingsHandler(gdb, cfg, mFeeds, nil, mYARA, notifier, nil, nil, nil, nil, nil, nil, nil, testRegistry, sessions, authMiddleware, log)
 	sseHandler := handlers.NewSSEHandler(hub)
 	csrf := authMiddleware.CSRF
 
