@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/izm1chael/mailhook/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/izm1chael/mailhook/actions/workflows/ci.yml)
 [![Release](https://github.com/izm1chael/mailhook/actions/workflows/release.yml/badge.svg)](https://github.com/izm1chael/mailhook/actions/workflows/release.yml)
+[![Latest Release](https://img.shields.io/github/v/release/izm1chael/mailhook?logo=github&label=release)](https://github.com/izm1chael/mailhook/releases/latest)
+[![Container](https://img.shields.io/badge/ghcr.io-mailhook-blue?logo=docker&logoColor=white)](https://github.com/izm1chael/mailhook/pkgs/container/mailhook)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/izm1chael/mailhook/badge)](https://scorecard.dev/viewer/?uri=github.com/izm1chael/mailhook)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12986/badge)](https://www.bestpractices.dev/projects/12986)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
