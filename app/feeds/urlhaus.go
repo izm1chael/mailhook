@@ -94,12 +94,25 @@ func parseLineFile(raw []byte) []string {
 }
 
 // phishtankFeed fetches the PhishTank online-valid JSON feed.
-type phishtankFeed struct{}
+// An API key is required for the data feed; without one requests are rate-limited/blocked.
+// Register at https://www.phishtank.com/api_info.php for a free application key.
+type phishtankFeed struct {
+	keyFn func() string // returns current PhishTank API key; may be nil or return ""
+}
 
 func (phishtankFeed) Name() string { return "phishtank" }
 
-func (phishtankFeed) Fetch(ctx context.Context, cacheDir string) ([]string, error) {
-	const feedURL = "https://data.phishtank.com/data/online-valid.json"
+func (f phishtankFeed) Fetch(ctx context.Context, cacheDir string) ([]string, error) {
+	key := ""
+	if f.keyFn != nil {
+		key = f.keyFn()
+	}
+	var feedURL string
+	if key != "" {
+		feedURL = "https://data.phishtank.com/data/" + url.PathEscape(key) + "/online-valid.json"
+	} else {
+		feedURL = "https://data.phishtank.com/data/online-valid.json"
+	}
 	cachePath := filepath.Join(cacheDir, "phishtank.json")
 
 	// PhishTank requires this user-agent or returns 403
@@ -114,11 +127,24 @@ func (phishtankFeed) Fetch(ctx context.Context, cacheDir string) ([]string, erro
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return loadCacheFile(cachePath)
+		urls, cacheErr := loadCacheFile(cachePath)
+		if cacheErr != nil {
+			return nil, fmt.Errorf("fetch: %w; %w", err, cacheErr)
+		}
+		return urls, nil
 	}
 	if resp.StatusCode != http.StatusOK {
+		status := resp.StatusCode
 		resp.Body.Close()
-		return loadCacheFile(cachePath)
+		urls, cacheErr := loadCacheFile(cachePath)
+		if cacheErr != nil {
+			hint := ""
+			if (status == http.StatusForbidden || status == http.StatusTooManyRequests) && key == "" {
+				hint = " (set MAILHOOK_PHISHTANK_KEY or configure via Settings → API keys to avoid rate limits)"
+			}
+			return nil, fmt.Errorf("HTTP %d%s; %w", status, hint, cacheErr)
+		}
+		return urls, nil
 	}
 	defer resp.Body.Close()
 

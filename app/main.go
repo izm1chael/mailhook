@@ -146,6 +146,7 @@ func main() {
 		os.Exit(1)
 	}
 	feedManager := feeds.New(cfg.FeedsCacheDir, gdb, log)
+	feedManager.SetPhishTankKey(cfg.PhishTankKey)
 	urlCheck := scanners.NewURLCheck(feedManager, log)
 	urlUnshorten := scanners.NewURLUnshorten(feedManager, cfg, log)
 	nrdCheck := scanners.NewNRDCheck(gdb, cfg, log)
@@ -354,7 +355,7 @@ func main() {
 	emailsHandler := handlers.NewEmailsHandler(gdb, store)
 	actionsHandler := handlers.NewActionsHandler(gdb, store, registry, rspamd, log)
 	allowlistsHandler := handlers.NewAllowlistsHandler(gdb, authMiddleware, log)
-	settingsHandler := handlers.NewSettingsHandler(gdb, cfg, feedManager, yaraScanner, notifier, vt, ipRep, settingsScanners, rspamd, clamav, accountMgr, makeOnEmail, registry, sessions, authMiddleware, log)
+	settingsHandler := handlers.NewSettingsHandler(gdb, cfg, feedManager, feedManager, yaraScanner, notifier, vt, ipRep, settingsScanners, rspamd, clamav, accountMgr, makeOnEmail, registry, sessions, authMiddleware, log)
 	sseHandler := handlers.NewSSEHandler(hub)
 
 	scanHandler, err := handlers.NewScanHandler(allScanners, cfg, cfg.MetricsAllowedCIDRs, authMiddleware)
@@ -657,6 +658,7 @@ func loadPersistedSettings(gdb *db.DB, cfg *config.Config, log *slog.Logger) {
 	loadSecret("ntfy_token", func(v string) { cfg.NtfyToken = v })
 	loadSecret("vt_api_key", func(v string) { cfg.VTAPIKey = v })
 	loadSecret("abuseipdb_key", func(v string) { cfg.AbuseIPDBKey = v })
+	loadSecret("phishtank_key", func(v string) { cfg.PhishTankKey = v })
 	loadStr("rspamd_url", func(v string) { cfg.RspamdURL = v })
 	loadStr("clamav_addr", func(v string) { cfg.ClamAVAddr = v })
 	loadStr("yara_rules_dir", func(v string) { cfg.YARARulesDir = v })

@@ -44,6 +44,7 @@ type Config struct {
 	YARARulesDir string
 	VTAPIKey     string
 	AbuseIPDBKey string
+	PhishTankKey string
 
 	// Verdict thresholds
 	SpamScore   float64
@@ -152,6 +153,7 @@ func Load() (*Config, error) {
 		YARARulesDir:        getEnv("MAILHOOK_YARA_RULES_DIR", "/rules"),
 		VTAPIKey:            getEnv("MAILHOOK_VT_API_KEY", ""),
 		AbuseIPDBKey:        getEnv("MAILHOOK_ABUSEIPDB_KEY", ""),
+		PhishTankKey:        getEnv("MAILHOOK_PHISHTANK_KEY", ""),
 		ListenAddr:          getEnv("MAILHOOK_LISTEN", "0.0.0.0:8080"),
 		AdminUser:           getEnv("MAILHOOK_ADMIN_USER", "admin"),
 		AdminPasswordBcrypt: getEnv("MAILHOOK_ADMIN_PASSWORD_BCRYPT", ""),

@@ -36,6 +36,11 @@ type APIKeyUpdater interface {
 	SetAPIKey(key string)
 }
 
+// PhishTankKeySetter allows updating the PhishTank feed API key at runtime.
+type PhishTankKeySetter interface {
+	SetPhishTankKey(key string)
+}
+
 // ScannerEnabler allows the settings UI to enable or disable individual scanners at runtime.
 type ScannerEnabler interface {
 	Name() string
@@ -75,6 +80,7 @@ type SettingsHandler struct {
 	gdb        *db.DB
 	cfg        *config.Config
 	feeds      FeedRefresher
+	phishTank  PhishTankKeySetter
 	yara       YARAReloader
 	notifier   *notify.Notifier
 	vt         APIKeyUpdater
@@ -95,6 +101,7 @@ func NewSettingsHandler(
 	gdb *db.DB,
 	cfg *config.Config,
 	feeds FeedRefresher,
+	phishTank PhishTankKeySetter,
 	yara YARAReloader,
 	notifier *notify.Notifier,
 	vt APIKeyUpdater,
@@ -110,7 +117,7 @@ func NewSettingsHandler(
 	log *slog.Logger,
 ) *SettingsHandler {
 	return &SettingsHandler{
-		gdb: gdb, cfg: cfg, feeds: feeds, yara: yara, notifier: notifier,
+		gdb: gdb, cfg: cfg, feeds: feeds, phishTank: phishTank, yara: yara, notifier: notifier,
 		vt: vt, ipRep: ipRep, scanners: scanners,
 		rspamd: rspamd, clamav: clamav,
 		accountMgr: accountMgr, makeEmail: makeEmail,
@@ -139,8 +146,9 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		"RejectScore":     h.cfg.RejectScore,
 		"NtfyURL":         h.cfg.NtfyURL,
 		"NtfyTopic":       h.cfg.NtfyTopic,
-		"VTConfigured":    h.cfg.VTAPIKey != "",
-		"IPRepConfigured": h.cfg.AbuseIPDBKey != "",
+		"VTConfigured":        h.cfg.VTAPIKey != "",
+		"IPRepConfigured":     h.cfg.AbuseIPDBKey != "",
+		"PhishTankConfigured": h.cfg.PhishTankKey != "",
 		"RspamdURL":       h.cfg.RspamdURL,
 		"ClamAVAddr":      h.cfg.ClamAVAddr,
 		"YARARulesDir":    h.cfg.YARARulesDir,
@@ -199,11 +207,12 @@ func encryptSetting(plaintext string) string {
 }
 
 // UpdateAPIKeys handles POST /api/settings/api-keys
-// Persists VirusTotal and AbuseIPDB keys to DB and applies them immediately.
+// Persists VirusTotal, AbuseIPDB, and PhishTank keys to DB and applies them immediately.
 func (h *SettingsHandler) UpdateAPIKeys(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		VTAPIKey     string `json:"vt_api_key"`
 		AbuseIPDBKey string `json:"abuseipdb_key"`
+		PhishTankKey string `json:"phishtank_key"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -214,23 +223,31 @@ func (h *SettingsHandler) UpdateAPIKeys(w http.ResponseWriter, r *http.Request) 
 		if err := tx.Save(&db.AppSetting{Key: "vt_api_key", Value: encryptSetting(req.VTAPIKey), UpdatedAt: now, UpdatedBy: actor}).Error; err != nil {
 			return err
 		}
-		return tx.Save(&db.AppSetting{Key: "abuseipdb_key", Value: encryptSetting(req.AbuseIPDBKey), UpdatedAt: now, UpdatedBy: actor}).Error
+		if err := tx.Save(&db.AppSetting{Key: "abuseipdb_key", Value: encryptSetting(req.AbuseIPDBKey), UpdatedAt: now, UpdatedBy: actor}).Error; err != nil {
+			return err
+		}
+		return tx.Save(&db.AppSetting{Key: "phishtank_key", Value: encryptSetting(req.PhishTankKey), UpdatedAt: now, UpdatedBy: actor}).Error
 	}); err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "db write failed"})
 		return
 	}
 	h.cfg.VTAPIKey = req.VTAPIKey
 	h.cfg.AbuseIPDBKey = req.AbuseIPDBKey
+	h.cfg.PhishTankKey = req.PhishTankKey
 	if h.vt != nil {
 		h.vt.SetAPIKey(req.VTAPIKey)
 	}
 	if h.ipRep != nil {
 		h.ipRep.SetAPIKey(req.AbuseIPDBKey)
 	}
+	if h.phishTank != nil {
+		h.phishTank.SetPhishTankKey(req.PhishTankKey)
+	}
 	h.log.Info("api keys updated", "by", actor)
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"vt_configured":    h.cfg.VTAPIKey != "",
-		"ipRep_configured": h.cfg.AbuseIPDBKey != "",
+		"vt_configured":        h.cfg.VTAPIKey != "",
+		"ipRep_configured":     h.cfg.AbuseIPDBKey != "",
+		"phishTank_configured": h.cfg.PhishTankKey != "",
 	})
 }
 
@@ -720,8 +737,11 @@ func (h *SettingsHandler) DeleteCustomFeed(w http.ResponseWriter, r *http.Reques
 
 // TestAccount handles POST /api/settings/accounts/test
 // Dials the IMAP server and attempts login to verify credentials without saving.
+// When editing an existing account (name provided) with no password supplied,
+// the stored password is looked up from the DB so the user doesn't need to re-enter it.
 func (h *SettingsHandler) TestAccount(w http.ResponseWriter, r *http.Request) {
 	var req struct {
+		Name          string `json:"name"`
 		Host          string `json:"host"`
 		Port          int    `json:"port"`
 		User          string `json:"user"`
@@ -731,8 +751,19 @@ func (h *SettingsHandler) TestAccount(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if req.Host == "" || req.User == "" || req.Pass == "" {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "host, user, and pass are required"})
+	if req.Host == "" || req.User == "" {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "host and user are required"})
+		return
+	}
+	// When editing an existing account, pass may be blank — look it up from DB.
+	if req.Pass == "" && req.Name != "" {
+		var acc db.Account
+		if err := h.gdb.Where("name = ?", req.Name).First(&acc).Error; err == nil {
+			req.Pass = string(acc.Pass)
+		}
+	}
+	if req.Pass == "" {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "password is required"})
 		return
 	}
 	if req.Port == 0 {

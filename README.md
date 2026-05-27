@@ -320,6 +320,27 @@ make build-ai        # build the AI-enabled binary
 A missing model is non-fatal: that sub-scanner is skipped and logged, while the rest of
 the pipeline continues to run.
 
+## Accessing over plain HTTP (no reverse proxy)
+
+Session cookies are set with the `Secure` flag by default, which instructs browsers to
+only send them over HTTPS. When you access MailHook directly over plain HTTP from a
+**non-localhost** address — for example, Docker published on a LAN IP or a VM's private
+address — the browser silently drops the session cookie and you will be redirected back
+to the login page immediately after signing in.
+
+To fix this, set `MAILHOOK_INSECURE_COOKIES=true` in your `.env` file:
+
+```env
+MAILHOOK_INSECURE_COOKIES=true
+```
+
+> **Note:** Browsers treat `127.0.0.1` and `localhost` as secure origins, so Secure
+> cookies work even over HTTP on loopback. You only need this setting when accessing
+> MailHook from another host over plain HTTP.
+>
+> **Do not** set this in production behind an HTTPS reverse proxy — leave it at the
+> default `false` so cookies are correctly scoped to HTTPS.
+
 ## Running behind a reverse proxy
 
 The dashboard speaks plain HTTP and is meant to sit behind a TLS-terminating reverse
