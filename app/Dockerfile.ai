@@ -7,8 +7,8 @@
 FROM golang:1.26.3-bookworm@sha256:386d475a660466863d9f8c766fec64d7fdad3edac2c6a05020c09534d71edb4b AS builder
 
 ARG YARA_VERSION=4.5.2
-# onnxruntime_go v1.30.1 requires ONNX Runtime C library v1.21.0
-ARG ONNX_VERSION=1.21.0
+# onnxruntime_go v1.30.1 requires ONNX Runtime C library v1.25.0
+ARG ONNX_VERSION=1.25.0
 
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends \
