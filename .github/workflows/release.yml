@@ -440,10 +440,87 @@ jobs:
           cache-from: type=gha,scope=ai
           cache-to: type=gha,scope=ai,mode=max
 
+  # ─── All-in-one AI Docker image (multi-arch) ────────────────────────────────
+  docker-allinone-ai:
+    needs: [security]
+    name: Docker all-in-one AI (multi-arch)
+    runs-on: ubuntu-24.04
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
+
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
+        with:
+          images: ghcr.io/izm1chael/mailhook
+          flavor: |
+            suffix=-allinone-ai,onlatest=true
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Set build version
+        id: bv
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: echo "VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore AI models cache (amd64 — base for QEMU cross-build)
+        id: cache-models
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: app/scanners/models
+          key: ai-models-distilbert-v2.4.1-amd64
+          restore-keys: ai-models-distilbert-v2.4.1-amd64
+
+      - name: Install Python (for models if cache miss)
+        if: steps.cache-models.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y python3 python3-pip
+
+      - name: Download Tranco greylist
+        run: make models-dl
+
+      - name: Export DistilBERT to ONNX
+        if: steps.cache-models.outputs.cache-hit != 'true'
+        run: make models-bert
+
+      - name: Export DGA CNN to ONNX
+        if: steps.cache-models.outputs.cache-hit != 'true'
+        run: make models-dga
+
+      - name: Build and push all-in-one AI image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          file: ./app/Dockerfile.allinone-ai
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ steps.bv.outputs.VERSION }}
+          cache-from: type=gha,scope=allinone-ai
+          cache-to: type=gha,scope=allinone-ai,mode=max
+
   # ─── GitHub Release ───────────────────────────────────────────────────────────
   release:
     name: GitHub Release
-    needs: [build, build-ai, docker, docker-allinone, docker-ai]
+    needs: [build, build-ai, docker, docker-allinone, docker-ai, docker-allinone-ai]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

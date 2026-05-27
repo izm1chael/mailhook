@@ -1,0 +1,168 @@
+# All-in-one AI image: mailhook (AI scanner) + rspamd + clamd in a single container.
+# Combines the ONNX/DistilBERT AI scanner with the bundled-services image.
+# Use for single-host deployments that want AI threat detection without separate containers.
+# For production, use docker-compose.yml (separate containers per service).
+#
+# Build:  docker build -f Dockerfile.allinone-ai -t mailhook:allinone-ai --build-arg VERSION=dev .
+# Run:    docker run -d --name mailhook \
+#           -p 127.0.0.1:8080:8080 \
+#           -v mailhook-data:/var/lib/mailhook \
+#           -v mailhook-feeds:/var/cache/mailhook/feeds \
+#           -v mailhook-rules:/rules \
+#           --env-file ../.env \
+#           mailhook:allinone-ai
+
+# ── Stage 1: build MailHook AI binary ────────────────────────────────────────
+FROM golang:1.26.3-bookworm@sha256:386d475a660466863d9f8c766fec64d7fdad3edac2c6a05020c09534d71edb4b AS builder
+
+ARG YARA_VERSION=4.5.2
+# onnxruntime_go v1.30.1 requires ONNX Runtime C library v1.21.0
+ARG ONNX_VERSION=1.21.0
+
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends \
+        gcc \
+        make \
+        automake \
+        autoconf \
+        libtool \
+        libssl-dev \
+        libmagic-dev \
+        libjansson-dev \
+        pkg-config \
+        ca-certificates \
+        wget \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    cd /tmp; \
+    wget -qO yara.tar.gz \
+      "https://github.com/VirusTotal/yara/archive/refs/tags/v${YARA_VERSION}.tar.gz"; \
+    tar -xzf yara.tar.gz; \
+    cd "yara-${YARA_VERSION}"; \
+    autoreconf -fiv; \
+    ./configure \
+        --enable-magic \
+        --with-crypto \
+        --disable-shared \
+        --enable-static \
+        --prefix=/usr/local; \
+    make -j"$(nproc)"; \
+    make install; \
+    rm -rf /tmp/yara*
+
+RUN set -eux; \
+    ARCH="$(uname -m)"; \
+    case "$ARCH" in \
+      x86_64)  ORT_ARCH=x64 ;; \
+      aarch64) ORT_ARCH=aarch64 ;; \
+      *) echo "Unsupported arch: $ARCH" && exit 1 ;; \
+    esac; \
+    curl -fsSL \
+      "https://github.com/microsoft/onnxruntime/releases/download/v${ONNX_VERSION}/onnxruntime-linux-${ORT_ARCH}-${ONNX_VERSION}.tgz" \
+      | tar xz --strip-components=1 -C /usr/local
+
+WORKDIR /src
+COPY app/go.mod app/go.sum ./
+RUN go mod download
+COPY app/ .
+
+ARG VERSION=dev
+RUN PKG_CONFIG_PATH=/usr/local/lib/pkgconfig \
+    CGO_ENABLED=1 GOOS=linux \
+    CGO_CFLAGS="-I/usr/local/include/onnxruntime" \
+    CGO_LDFLAGS="-L/usr/local/lib -lonnxruntime" \
+    go build \
+    -tags "yara_static ai" \
+    -trimpath \
+    -ldflags="-s -w -X main.version=${VERSION}" \
+    -o /out/mailhook \
+    .
+
+# ── Stage 2: runtime with all services ───────────────────────────────────────
+FROM ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends \
+        clamav-daemon \
+        clamav-freshclam \
+        rspamd \
+        libmagic1 \
+        libssl3 \
+        ca-certificates \
+        tzdata \
+        wget \
+        xz-utils \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG S6_VERSION=3.2.0.2
+RUN set -eux; \
+    ARCH=$(uname -m); \
+    wget -qO /tmp/s6-noarch.tar.xz \
+      "https://github.com/just-containers/s6-overlay/releases/download/v${S6_VERSION}/s6-overlay-noarch.tar.xz"; \
+    wget -qO /tmp/s6-arch.tar.xz \
+      "https://github.com/just-containers/s6-overlay/releases/download/v${S6_VERSION}/s6-overlay-${ARCH}.tar.xz"; \
+    tar -C / -Jxpf /tmp/s6-noarch.tar.xz; \
+    tar -C / -Jxpf /tmp/s6-arch.tar.xz; \
+    rm /tmp/s6-noarch.tar.xz /tmp/s6-arch.tar.xz
+
+# ONNX Runtime shared library (required at runtime by the AI scanner)
+COPY --from=builder /usr/local/lib/libonnxruntime.so* /usr/local/lib/
+RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/onnxruntime.conf && ldconfig
+
+COPY --from=builder /out/mailhook /usr/local/bin/mailhook
+
+COPY packaging/allinone/s6/freshclam-init/type \
+                                    /etc/s6-overlay/s6-rc.d/freshclam-init/type
+COPY packaging/allinone/s6/freshclam-init/up \
+                                    /etc/s6-overlay/s6-rc.d/freshclam-init/up
+
+COPY packaging/allinone/s6/clamd/type    /etc/s6-overlay/s6-rc.d/clamd/type
+COPY packaging/allinone/s6/clamd/run     /etc/s6-overlay/s6-rc.d/clamd/run
+COPY packaging/allinone/s6/clamd/dependencies.d/freshclam-init \
+                                    /etc/s6-overlay/s6-rc.d/clamd/dependencies.d/freshclam-init
+
+COPY packaging/allinone/s6/rspamd/type   /etc/s6-overlay/s6-rc.d/rspamd/type
+COPY packaging/allinone/s6/rspamd/run    /etc/s6-overlay/s6-rc.d/rspamd/run
+
+COPY packaging/allinone/s6/mailhook/type /etc/s6-overlay/s6-rc.d/mailhook/type
+COPY packaging/allinone/s6/mailhook/run  /etc/s6-overlay/s6-rc.d/mailhook/run
+COPY packaging/allinone/s6/mailhook/dependencies.d/clamd \
+                                    /etc/s6-overlay/s6-rc.d/mailhook/dependencies.d/clamd
+COPY packaging/allinone/s6/mailhook/dependencies.d/rspamd \
+                                    /etc/s6-overlay/s6-rc.d/mailhook/dependencies.d/rspamd
+
+COPY packaging/allinone/s6/user/contents.d/ \
+                                    /etc/s6-overlay/s6-rc.d/user/contents.d/
+
+COPY rspamd-config/local.d/ /etc/rspamd/local.d/
+
+RUN sed -i '/^LocalSocket \/var\/run\/clamav\/clamd.ctl/a TCPSocket 3310\nTCPAddr 127.0.0.1' \
+      /etc/clamav/clamd.conf && \
+    echo '\n# Docker: log to stdout' >> /etc/clamav/clamd.conf && \
+    echo 'LogFile /dev/stdout' >> /etc/clamav/clamd.conf && \
+    echo 'LogSyslog no' >> /etc/clamav/clamd.conf
+
+RUN find /etc/s6-overlay/s6-rc.d -name "run" -o -name "up" | xargs chmod 755
+
+RUN install -d -m 750 -o clamav -g clamav /var/run/clamav \
+    && install -d -m 755 /var/lib/mailhook/emls /var/lib/mailhook/rules \
+                          /var/cache/mailhook/feeds \
+    && useradd --system --no-create-home --shell /usr/sbin/nologin \
+               --user-group mailhook \
+    && chown -R mailhook:mailhook /var/lib/mailhook /var/cache/mailhook
+
+ENV LD_LIBRARY_PATH=/usr/local/lib
+
+EXPOSE 8080
+
+VOLUME ["/var/lib/mailhook", "/var/cache/mailhook/feeds", "/rules"]
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=5 \
+    CMD wget -qO- http://localhost:8080/healthz || exit 1
+
+ENTRYPOINT ["/init"]
