@@ -84,6 +84,9 @@ type Scan struct {
 	Status     string `gorm:"index"` // INBOX | QUARANTINED | RELEASED | DELETED | LEARNED_HAM | LEARNED_SPAM
 	ActionedBy string // "auto" or "user:<username>"
 	ActionedAt *time.Time
+
+	// Origin
+	Source string `gorm:"index"` // "" (live) | "backfill"
 }
 
 // MakeAccountUID builds the globally-unique dedup key for a message.
@@ -303,6 +306,7 @@ type Account struct {
 	Mailbox       string    `gorm:"not null;default:INBOX"`
 	Quarantine    string    `gorm:"not null;default:Quarantine"`
 	TLSSkipVerify bool      `gorm:"default:false"`
+	BackfillDays  int       `gorm:"default:0"` // 0 = disabled, N = last N days, -1 = all time
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }
@@ -331,9 +335,16 @@ type AppSetting struct {
 	UpdatedBy string
 }
 
+// Source constants for Scan.Source.
+const (
+	SourceLive     = ""         // normal live processing
+	SourceBackfill = "backfill" // historical scan — no IMAP actions taken automatically
+)
+
 // Action constants for AuditLog.Action.
 const (
 	ActionQuarantine = "QUARANTINE"
+	ActionBackfill   = "BACKFILL"
 	ActionRelease    = "RELEASE"
 	ActionDelete     = "DELETE"
 	ActionLearnHam   = "LEARN_HAM"

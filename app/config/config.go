@@ -24,6 +24,9 @@ type AccountConfig struct {
 	Mailbox       string `yaml:"mailbox"`
 	Quarantine    string `yaml:"quarantine"`
 	TLSSkipVerify bool   `yaml:"tls_skip_verify"`
+	// BackfillDays controls the one-shot historical scan run at startup.
+	// 0 = disabled, N = scan last N days, -1 = scan all messages.
+	BackfillDays  int    `yaml:"backfill_days"`
 }
 
 // Config is the complete runtime configuration for MailHook.
@@ -134,6 +137,7 @@ type yamlFile struct {
 		Mailbox       string `yaml:"mailbox"`
 		Quarantine    string `yaml:"quarantine"`
 		TLSSkipVerify bool   `yaml:"tls_skip_verify"`
+		BackfillDays  int    `yaml:"backfill_days"`
 	} `yaml:"accounts"`
 }
 
@@ -317,6 +321,7 @@ func (c *Config) loadYAML(path string) error {
 			Mailbox:       a.Mailbox,
 			Quarantine:    a.Quarantine,
 			TLSSkipVerify: a.TLSSkipVerify,
+			BackfillDays:  a.BackfillDays,
 		}
 		if ac.Port == 0 {
 			ac.Port = 993

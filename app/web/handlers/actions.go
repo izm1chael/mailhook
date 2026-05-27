@@ -137,6 +137,54 @@ func (h *ActionsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Quarantine moves a message from its current mailbox to the quarantine folder.
+// Used to manually quarantine backfill findings or any inbox message.
+// POST /api/quarantine/{id}
+func (h *ActionsHandler) Quarantine(w http.ResponseWriter, r *http.Request) {
+	h.withScan(w, r, func(scan *db.Scan) {
+		act, ok := h.registry.GetActions(scan.AccountName)
+		if !ok {
+			respondJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown account"})
+			return
+		}
+		newUID, newMailbox, err := act.MoveToQuarantine(r.Context(), scan.IMAPMailbox, scan.IMAPUID)
+		if err != nil {
+			h.log.Error("quarantine failed", "scan_id", scan.ID, "err", err)
+			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "quarantine failed"})
+			return
+		}
+		actor := actorFromRequest(r)
+		now := time.Now()
+		if writeErr := h.gdb.Write(func(tx *gorm.DB) error {
+			updates := map[string]interface{}{
+				"status":       db.StatusQuarantined,
+				"actioned_by":  actor,
+				"actioned_at":  now,
+				"imap_mailbox": newMailbox,
+			}
+			if newUID > 0 {
+				updates["imap_uid"] = newUID
+				updates["account_uid"] = db.MakeAccountUID(scan.AccountName, newMailbox, newUID)
+			}
+			if err := tx.Model(scan).Updates(updates).Error; err != nil {
+				return err
+			}
+			return tx.Create(&db.AuditLog{
+				ScanID:    scan.ID,
+				Action:    db.ActionQuarantine,
+				Actor:     actor,
+				Note:      "user-triggered quarantine",
+				CreatedAt: now,
+			}).Error
+		}); writeErr != nil {
+			h.log.Error("updateStatus failed after quarantine", "scan_id", scan.ID, "err", writeErr)
+			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "status update failed"})
+			return
+		}
+		respondJSON(w, http.StatusOK, map[string]string{"status": "quarantined"})
+	})
+}
+
 // LearnSpam teaches Rspamd this message is spam without moving it.
 // POST /api/learn-spam/{id}
 func (h *ActionsHandler) LearnSpam(w http.ResponseWriter, r *http.Request) {

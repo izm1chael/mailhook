@@ -113,6 +113,35 @@ func (h *DashboardHandler) GetQuarantine(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// GetBackfill renders the historical scan results view.
+func (h *DashboardHandler) GetBackfill(w http.ResponseWriter, r *http.Request) {
+	csrfToken := csrfFromRequest(h.middleware, w, r)
+
+	page, limit := paginationParams(r, 50)
+	offset := (page - 1) * limit
+
+	baseQ := h.gdb.Model(&db.Scan{}).Where("source = ?", db.SourceBackfill)
+	baseQ, applied := buildScanFilters(r, baseQ)
+
+	var total int64
+	baseQ.Count(&total)
+
+	var scans []db.Scan
+	baseQ.Order("created_at desc").Limit(limit).Offset(offset).Find(&scans)
+
+	web.Render(w, r, "backfill.html", map[string]interface{}{
+		"CSRFToken":      csrfToken,
+		"Scans":          scans,
+		"Total":          total,
+		"Page":           page,
+		"Limit":          limit,
+		"Pages":          totalPages(total, limit),
+		"Nav":            "backfill",
+		"Filters":        applied,
+		"VerdictOptions": []string{"CLEAN", "SPAM", "PHISH", "MALWARE", "SUSPICIOUS"},
+	})
+}
+
 // GetAuditLog renders the audit log viewer.
 func (h *DashboardHandler) GetAuditLog(w http.ResponseWriter, r *http.Request) {
 	csrfToken := csrfFromRequest(h.middleware, w, r)

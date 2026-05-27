@@ -1,0 +1,333 @@
+{{define "backfill.html"}}<!DOCTYPE html>
+<html lang="en">
+<head>{{template "head" .}}</head>
+<body class="bg-gray-100 text-gray-900 min-h-screen dark:bg-gray-900 dark:text-gray-100" x-data="backfill"
+      @keydown.escape.window="closeDetail">
+{{template "nav" .}}
+<main class="max-w-7xl mx-auto px-4 py-6">
+
+  <div class="flex items-center justify-between mb-2">
+    <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-100">
+      Historical Scan
+      <span class="text-gray-400 font-normal text-base">({{.Total}} messages)</span>
+    </h1>
+  </div>
+  <p class="text-sm text-gray-500 dark:text-gray-400 mb-5">
+    Messages found by the backfill scanner — scanned but left untouched in your inbox.
+    Review threats below and quarantine or delete manually.
+  </p>
+
+  <!-- Filter bar -->
+  <form method="GET" class="flex flex-wrap gap-2 mb-4 items-end">
+    <select name="verdict" class="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <option value="" {{if eq (index .Filters "verdict") ""}}selected{{end}}>All verdicts</option>
+      {{range .VerdictOptions}}
+      <option value="{{.}}" {{if eq (index $.Filters "verdict") .}}selected{{end}}>{{.}}</option>
+      {{end}}
+    </select>
+    <input type="text" name="q" value="{{index .Filters "q"}}" placeholder="Search sender or subject…"
+      class="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 w-64">
+    <input type="date" name="from_date" value="{{index .Filters "from_date"}}"
+      class="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <input type="date" name="to_date" value="{{index .Filters "to_date"}}"
+      class="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <button type="submit" class="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors">Filter</button>
+    <a href="/backfill" class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 px-3 py-2">Clear</a>
+    <a href="/api/export?source=backfill" class="text-sm bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 px-3 py-2 rounded-lg transition-colors ml-auto">Export CSV</a>
+  </form>
+
+  <!-- Action flash -->
+  <div x-show="flash" x-text="flash"
+    class="mb-4 p-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm"
+    x-transition x-cloak></div>
+  <div x-show="error" x-text="error"
+    class="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm"
+    x-transition x-cloak></div>
+
+  <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-gray-50 dark:bg-gray-700 text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+          <tr>
+            <th class="px-4 py-3 text-left">From</th>
+            <th class="px-4 py-3 text-left">Subject</th>
+            <th class="px-4 py-3 text-left">Verdict</th>
+            <th class="px-4 py-3 text-left">Score</th>
+            <th class="px-4 py-3 text-left">Auth</th>
+            <th class="px-4 py-3 text-left">Scanned</th>
+            <th class="px-4 py-3 text-left">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50 dark:divide-gray-700">
+          {{range .Scans}}
+          <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer" data-scan-id="{{.ID}}" @click="openDetailFromEvent">
+            <td class="px-4 py-3 font-mono text-xs text-gray-700 dark:text-gray-300 truncate max-w-xs">{{.From}}</td>
+            <td class="px-4 py-3 text-gray-700 dark:text-gray-300 truncate max-w-sm">{{.Subject}}</td>
+            <td class="px-4 py-3">
+              <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                {{if eq .Verdict "MALWARE"}}bg-red-100 text-red-800
+                {{else if eq .Verdict "PHISH"}}bg-orange-100 text-orange-800
+                {{else if eq .Verdict "SPAM"}}bg-yellow-100 text-yellow-800
+                {{else if eq .Verdict "SUSPICIOUS"}}bg-amber-100 text-amber-800
+                {{else}}bg-green-100 text-green-800{{end}}">
+                {{.Verdict}}
+              </span>
+            </td>
+            <td class="px-4 py-3 font-mono text-xs text-gray-500 dark:text-gray-400">{{printf "%.1f" .RspamdScore}}</td>
+            <td class="px-4 py-3">
+              <div class="flex gap-1">
+                <span class="px-1 rounded text-xs
+                  {{if eq .SPFResult "pass"}}bg-green-100 text-green-700{{else}}bg-red-100 text-red-700{{end}}">
+                  SPF
+                </span>
+                <span class="px-1 rounded text-xs
+                  {{if eq .DKIMResult "pass"}}bg-green-100 text-green-700{{else}}bg-red-100 text-red-700{{end}}">
+                  DKIM
+                </span>
+                <span class="px-1 rounded text-xs
+                  {{if eq .DMARCResult "pass"}}bg-green-100 text-green-700{{else}}bg-red-100 text-red-700{{end}}">
+                  DMARC
+                </span>
+              </div>
+            </td>
+            <td class="px-4 py-3 text-gray-400 dark:text-gray-500 text-xs whitespace-nowrap">{{.CreatedAt.Format "Jan 02 15:04"}}</td>
+            <td class="px-4 py-3">
+              <div class="flex gap-2 flex-wrap" @click.stop>
+                <button data-scan-id="{{.ID}}" @click="quarantineFromEvent"
+                  class="text-xs bg-orange-600 hover:bg-orange-700 text-white px-2 py-1 rounded transition-colors">
+                  Quarantine
+                </button>
+                <button data-scan-id="{{.ID}}" @click="delFromEvent"
+                  class="text-xs bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded transition-colors">
+                  Delete
+                </button>
+                <a href="/api/eml/{{.ID}}" target="_blank"
+                  class="text-xs bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-300 px-2 py-1 rounded transition-colors">
+                  EML
+                </a>
+              </div>
+            </td>
+          </tr>
+          {{else}}
+          <tr>
+            <td colspan="7" class="px-4 py-10 text-center text-gray-400 text-sm">
+              No backfill results.
+              {{if eq (index .Filters "verdict") ""}}
+              Set <code class="font-mono text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">backfill_days</code> in your account config and restart to scan historical email.
+              {{end}}
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+
+    {{if gt .Pages 1}}
+    <div class="px-5 py-4 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between text-sm">
+      <span class="text-gray-500 dark:text-gray-400">Page {{.Page}} of {{.Pages}}</span>
+      <div class="flex gap-2">
+        {{if gt .Page 1}}
+        <a href="?page={{sub .Page 1}}" class="px-3 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700">Prev</a>
+        {{end}}
+        {{if lt .Page .Pages}}
+        <a href="?page={{add .Page 1}}" class="px-3 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700">Next</a>
+        {{end}}
+      </div>
+    </div>
+    {{end}}
+  </div>
+
+  {{template "scan-detail" .}}
+
+</main>
+{{template "scripts" .}}
+<script nonce="{{.Nonce}}">
+document.addEventListener('alpine:init', () => {
+Alpine.data('backfill', () => ({
+  flash: '',
+  error: '',
+  detailOpen: false,
+  detailLoading: false,
+  detailScan: null,
+  previewOpen: false,
+  async act(url, msg) {
+    this.flash = ''; this.error = '';
+    try {
+      await apiPost(url);
+      this.flash = msg;
+      setTimeout(() => location.reload(), 1200);
+    } catch(e) { this.error = 'Action failed: ' + e.message; }
+  },
+  quarantine(id) { this.act('/api/quarantine/' + id, 'Message quarantined.'); },
+  del(id) {
+    if (!confirm('Permanently delete this message?')) return;
+    this.act('/api/delete/' + id, 'Message deleted.');
+  },
+  async openDetail(id) {
+    this.detailOpen = true;
+    this.detailLoading = true;
+    this.detailScan = null;
+    this.previewOpen = false;
+    try {
+      const r = await fetch('/api/scans/' + id);
+      if (!r.ok) throw new Error(r.statusText);
+      this.detailScan = await r.json();
+    } catch(e) {
+      this.error = 'Could not load detail: ' + e.message;
+      this.detailOpen = false;
+    } finally {
+      this.detailLoading = false;
+    }
+  },
+  closeDetail() { this.detailOpen = false; this.detailScan = null; this.previewOpen = false; },
+  async quarantineFromDetail() {
+    await this.act('/api/quarantine/' + this.detailScan.ID, 'Message quarantined.');
+  },
+  async deleteFromDetail() {
+    if (!confirm('Permanently delete this message?')) return;
+    await this.act('/api/delete/' + this.detailScan.ID, 'Message deleted.');
+  },
+  verdictEmoji() {
+    if (!this.detailScan) return '';
+    const m = {'MALWARE': '🦠', 'PHISH': '🎣', 'SPAM': '📧', 'SUSPICIOUS': '⚠️', 'CLEAN': '✅'};
+    return m[this.detailScan.Verdict] || '❓';
+  },
+  confidenceText() {
+    if (!this.detailScan) return '';
+    return Math.round(this.detailScan.Confidence * 100) + '% confidence';
+  },
+  receivedText() {
+    if (!this.detailScan) return '';
+    return new Date(this.detailScan.CreatedAt).toLocaleString();
+  },
+  sizeText() {
+    if (!this.detailScan) return '';
+    return (this.detailScan.SizeBytes / 1024).toFixed(1) + ' KB';
+  },
+  authBadgeClass(val) {
+    return val === 'pass' ? 'bg-green-100 text-green-800' : (val ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-500');
+  },
+  rspamdClass() {
+    if (!this.detailScan) return '';
+    return this.detailScan.RspamdScore >= 7 ? 'text-red-700' : this.detailScan.RspamdScore >= 5 ? 'text-yellow-700' : 'text-green-700';
+  },
+  rspamdText() {
+    if (!this.detailScan) return '';
+    return this.detailScan.RspamdScore.toFixed(1) + ' — ' + (this.detailScan.RspamdAction || 'no action');
+  },
+  clamavClass() {
+    if (!this.detailScan) return 'text-green-700';
+    return this.detailScan.ClamAVStatus && this.detailScan.ClamAVStatus.startsWith('VIRUS') ? 'text-red-700 font-bold' : 'text-green-700';
+  },
+  urlHitsList() {
+    if (!this.detailScan) return [];
+    try { return JSON.parse(this.detailScan.URLHits); } catch { return []; }
+  },
+  vtResultsList() {
+    if (!this.detailScan) return [];
+    try { return JSON.parse(this.detailScan.VTResults); } catch { return []; }
+  },
+  hasNoAttachments() {
+    if (!this.detailScan || !this.detailScan.Attachments || this.detailScan.Attachments === 'null') return true;
+    try { return JSON.parse(this.detailScan.Attachments || '[]').length === 0; } catch { return true; }
+  },
+  get verdictBannerClass() {
+    if (!this.detailScan) return '';
+    const m = { MALWARE: 'bg-red-50 border border-red-200', PHISH: 'bg-orange-50 border border-orange-200', SPAM: 'bg-yellow-50 border border-yellow-200', SUSPICIOUS: 'bg-amber-50 border border-amber-200', CLEAN: 'bg-green-50 border border-green-200' };
+    return m[this.detailScan.Verdict] || '';
+  },
+  get verdictBadgeClass() {
+    if (!this.detailScan) return 'bg-gray-100 text-gray-800';
+    const m = { MALWARE: 'bg-red-100 text-red-800', PHISH: 'bg-orange-100 text-orange-800', SPAM: 'bg-yellow-100 text-yellow-800', SUSPICIOUS: 'bg-amber-100 text-amber-800', CLEAN: 'bg-green-100 text-green-800' };
+    return m[this.detailScan.Verdict] || 'bg-gray-100 text-gray-800';
+  },
+  get verdictEmojiVal() { return this.verdictEmoji(); },
+  get confidenceLabel() { return this.confidenceText(); },
+  get receivedLabel() { return this.receivedText(); },
+  get sendingIPLabel() { return (this.detailScan && this.detailScan.SendingIP) ? this.detailScan.SendingIP : '—'; },
+  get sizeLabel() { return this.sizeText(); },
+  get authItemsList() {
+    if (!this.detailScan) return [];
+    const cls = (v) => v === 'pass' ? 'bg-green-100 text-green-800' : (v ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-500');
+    return [
+      { label: 'SPF',   val: this.detailScan.SPFResult,   cls: cls(this.detailScan.SPFResult),   display: this.detailScan.SPFResult   || 'none' },
+      { label: 'DKIM',  val: this.detailScan.DKIMResult,  cls: cls(this.detailScan.DKIMResult),  display: this.detailScan.DKIMResult  || 'none' },
+      { label: 'DMARC', val: this.detailScan.DMARCResult, cls: cls(this.detailScan.DMARCResult), display: this.detailScan.DMARCResult || 'none' },
+    ];
+  },
+  get rspamdScoreClass() { return this.rspamdClass(); },
+  get rspamdScoreText() { return this.rspamdText(); },
+  get clamavCssClass() { return this.clamavClass(); },
+  get clamavStatusLabel() { return (this.detailScan && this.detailScan.ClamAVStatus) ? this.detailScan.ClamAVStatus : 'UNAVAILABLE'; },
+  get yaraScoreClass() {
+    if (!this.detailScan) return 'text-gray-400';
+    try { return JSON.parse(this.detailScan.YARAMatches || '[]').length > 0 ? 'text-red-700 font-mono' : 'text-gray-400'; } catch { return 'text-gray-400'; }
+  },
+  get yaraScoreText() {
+    if (!this.detailScan) return 'No matches';
+    try {
+      const m = JSON.parse(this.detailScan.YARAMatches || '[]');
+      return m.length > 0 ? m.join(', ') : 'No matches';
+    } catch { return 'No matches'; }
+  },
+  get urlHitsEmpty() { return !this.detailScan || !this.detailScan.URLHits || this.detailScan.URLHits === 'null'; },
+  get urlHitsPresent() { return !this.urlHitsEmpty; },
+  get urlHitsItems() {
+    if (!this.detailScan) return [];
+    try { return JSON.parse(this.detailScan.URLHits).map(h => ({ ...h, display: h.url + (h.feed ? ' [' + h.feed + ']' : '') })); } catch { return []; }
+  },
+  get ipRepEmpty() { return !this.detailScan || !this.detailScan.IPReputation || this.detailScan.IPReputation === 'null'; },
+  get ipRepPresent() { return !this.ipRepEmpty; },
+  get ipNoRepLabel() { return (this.detailScan && this.detailScan.SendingIP) ? 'Clean' : 'No IP'; },
+  get ipAbuseScoreClass() {
+    if (!this.detailScan) return 'text-yellow-700';
+    try { return JSON.parse(this.detailScan.IPReputation).abuse_score > 50 ? 'text-red-700' : 'text-yellow-700'; } catch { return 'text-yellow-700'; }
+  },
+  get ipAbuseScoreText() {
+    if (!this.detailScan) return '';
+    try { return 'Score: ' + JSON.parse(this.detailScan.IPReputation).abuse_score + '/100'; } catch { return ''; }
+  },
+  get vtResultsEmpty() { return !this.detailScan || !this.detailScan.VTResults || this.detailScan.VTResults === 'null'; },
+  get vtResultsPresent() { return !this.vtResultsEmpty; },
+  get vtItems() {
+    if (!this.detailScan) return [];
+    try {
+      return JSON.parse(this.detailScan.VTResults).map(r => ({
+        ...r,
+        cls: r.positives > 0 ? 'text-red-700 font-bold' : 'text-green-700',
+        display: r.positives + '/' + r.total + ' engines — ' + String(r.sha256 || '').slice(0, 12) + '...',
+      }));
+    } catch { return []; }
+  },
+  get noAttachments() {
+    if (!this.detailScan || !this.detailScan.Attachments || this.detailScan.Attachments === 'null') return true;
+    try { return JSON.parse(this.detailScan.Attachments || '[]').length === 0; } catch { return true; }
+  },
+  get hasAttachmentsVal() { return !this.noAttachments; },
+  get attachmentsItems() {
+    if (!this.detailScan) return [];
+    try {
+      return JSON.parse(this.detailScan.Attachments || '[]').map(a => ({
+        ...a,
+        cls: a.IsDangerous ? 'text-red-700' : 'text-gray-700',
+        filename: a.Filename || '(unnamed)',
+        sizeLabel: (a.SizeBytes / 1024).toFixed(1) + ' KB',
+        vtCls: a.VTPositives > 0 ? 'text-red-700 font-bold' : 'text-gray-400',
+        vtDisplay: a.VTPositives !== undefined ? a.VTPositives + '/' + a.VTTotal + ' engines' : '—',
+      }));
+    } catch { return []; }
+  },
+  get isQuarantined() { return !!(this.detailScan && this.detailScan.Status === 'QUARANTINED'); },
+  get emlHref() { return '/api/eml/' + (this.detailScan ? this.detailScan.ID : ''); },
+  get previewToggleLabel() { return this.previewOpen ? 'Hide preview' : 'Show preview'; },
+  get previewSrc() { return '/api/preview/' + (this.detailScan ? this.detailScan.ID : ''); },
+  get isDetailReady() { return !!(this.detailScan && !this.detailLoading); },
+  get subjectLabel() { return (this.detailScan && this.detailScan.Subject) ? this.detailScan.Subject : '(no subject)'; },
+  quarantineFromEvent(event) { this.quarantine(Number(event.currentTarget.dataset.scanId)); },
+  delFromEvent(event) { this.del(Number(event.currentTarget.dataset.scanId)); },
+  openDetailFromEvent(event) { this.openDetail(Number(event.currentTarget.dataset.scanId)); },
+}))
+})
+</script>
+</body>
+</html>{{end}}

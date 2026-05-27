@@ -245,6 +245,7 @@ func main() {
 			User: a.User, Pass: string(a.Pass),
 			Mailbox: a.Mailbox, Quarantine: a.Quarantine,
 			TLSSkipVerify: a.TLSSkipVerify,
+			BackfillDays:  a.BackfillDays,
 		}
 		act := imaplib.NewActions(acfg, log)
 		if err := act.EnsureFolderExists(ctx); err != nil {
@@ -252,6 +253,23 @@ func main() {
 		}
 		if err := accountMgr.Start(acfg, makeOnEmail(acfg)); err != nil {
 			log.Warn("imap listener failed to start", "account", a.Name, "err", err)
+		}
+		if acfg.BackfillDays != 0 {
+			makeBackfillEmail := func(account config.AccountConfig) imaplib.OnEmailFn {
+				pipelineAct := imaplib.NewActions(account, log)
+				p := pipeline.New(allScanners, store, gdb, pipelineAct, hub, notifier, cfg, log, globalScanSem)
+				return func(ctx context.Context, accountName string, raw []byte, uid uint32, mailbox string) {
+					pipelineWg.Add(1)
+					defer pipelineWg.Done()
+					p.ProcessBackfill(ctx, accountName, raw, uid, mailbox)
+				}
+			}
+			bf := imaplib.NewBackfillScanner(acfg, gdb, makeBackfillEmail(acfg), log)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				bf.Run(bgCtx)
+			}()
 		}
 	}
 
@@ -361,6 +379,7 @@ func main() {
 	// Protected pages
 	mux.HandleFunc("GET /", authMiddleware.Require(dashHandler.GetDashboard))
 	mux.HandleFunc("GET /quarantine", authMiddleware.Require(dashHandler.GetQuarantine))
+	mux.HandleFunc("GET /backfill", authMiddleware.Require(dashHandler.GetBackfill))
 	mux.HandleFunc("GET /stats", authMiddleware.Require(dashHandler.GetStats))
 	mux.HandleFunc("GET /allowlists", authMiddleware.Require(allowlistsHandler.GetAllowlists))
 	mux.HandleFunc("GET /settings", authMiddleware.Require(settingsHandler.GetSettings))
@@ -384,6 +403,7 @@ func main() {
 	mux.HandleFunc("POST /api/release/", authMiddleware.Require(csrf(actionsHandler.Release)))
 	mux.HandleFunc("POST /api/release-learn/", authMiddleware.Require(csrf(actionsHandler.ReleaseAndLearn)))
 	mux.HandleFunc("POST /api/delete/", authMiddleware.Require(csrf(actionsHandler.Delete)))
+	mux.HandleFunc("POST /api/quarantine/", authMiddleware.Require(csrf(actionsHandler.Quarantine)))
 	mux.HandleFunc("POST /api/learn-spam/", authMiddleware.Require(csrf(actionsHandler.LearnSpam)))
 	mux.HandleFunc("POST /api/rescan/", authMiddleware.Require(csrf(actionsHandler.Rescan)))
 	mux.HandleFunc("POST /api/whitelist", authMiddleware.Require(csrf(allowlistsHandler.AddWhitelist)))
@@ -654,6 +674,7 @@ func migrateAccountsToDB(gdb *db.DB, cfg *config.Config, log *slog.Logger) {
 			User: a.User, Pass: db.EncryptedString(a.Pass),
 			Mailbox: a.Mailbox, Quarantine: a.Quarantine,
 			TLSSkipVerify: a.TLSSkipVerify,
+			BackfillDays:  a.BackfillDays,
 		}
 		if err := gdb.Write(func(tx *gorm.DB) error {
 			return tx.Save(&acc).Error
