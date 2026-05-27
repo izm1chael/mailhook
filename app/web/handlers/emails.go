@@ -27,7 +27,7 @@ func NewEmailsHandler(gdb *db.DB, store *storage.Store) *EmailsHandler {
 }
 
 // ListScans handles GET /api/scans
-// Supports query params: status, verdict, account, from, subject, page, limit
+// Supports query params: status, verdict, account, from, subject, source, page, limit
 func (h *EmailsHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 	page, limit := paginationParams(r, 50)
 	offset := (page - 1) * limit
@@ -48,6 +48,9 @@ func (h *EmailsHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 	}
 	if subject := r.URL.Query().Get("subject"); subject != "" {
 		q = q.Where("subject LIKE ?", "%"+escapeLike(subject)+"%")
+	}
+	if source := r.URL.Query().Get("source"); source != "" {
+		q = q.Where("source = ?", source)
 	}
 
 	var total int64
@@ -161,6 +164,9 @@ func (h *EmailsHandler) Export(w http.ResponseWriter, r *http.Request) {
 	}
 	if v := r.URL.Query().Get("status"); v != "" {
 		q = q.Where("status = ?", strings.ToUpper(v))
+	}
+	if v := r.URL.Query().Get("source"); v != "" {
+		q = q.Where("source = ?", v)
 	}
 	if v := r.URL.Query().Get("q"); v != "" {
 		pattern := "%" + escapeLike(v) + "%"

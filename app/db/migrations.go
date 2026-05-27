@@ -24,6 +24,7 @@ var migrations = []versionedMigration{
 	{4, "add malware_bazaar_hashes table and mb_results column on scans", nil},
 	{5, "add scanned_urls column to scans for retrospective scanning", nil},
 	{6, "rebuild account_uid as account:mailbox:uid (F-056)", migrateV6AccountUIDMailboxScoped},
+	{7, "add source column to scans and backfill_days to accounts", nil},
 }
 
 // migrateV6AccountUIDMailboxScoped rewrites existing scans.account_uid from the

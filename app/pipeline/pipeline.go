@@ -115,15 +115,32 @@ func New(
 
 // Process handles one email end-to-end. Designed to be called as a goroutine.
 func (p *Pipeline) Process(ctx context.Context, accountName string, raw []byte, uid uint32, mailbox string) {
+	p.process(ctx, accountName, raw, uid, mailbox, db.SourceLive)
+}
+
+// ProcessBackfill is like Process but skips all IMAP actions (no quarantine, no delete,
+// no flag, no \Seen mark). The scan record is stored with source="backfill" and
+// status="INBOX" so the user can review and act manually from the web UI.
+func (p *Pipeline) ProcessBackfill(ctx context.Context, accountName string, raw []byte, uid uint32, mailbox string) {
+	p.process(ctx, accountName, raw, uid, mailbox, db.SourceBackfill)
+}
+
+func (p *Pipeline) process(ctx context.Context, accountName string, raw []byte, uid uint32, mailbox, source string) {
 	// Top-level panic recovery: Parse() runs attacker-controlled bytes through
 	// image.Decode, gozxing QR, and goquery — any of which can panic on a crafted
 	// message. Without this, a single malicious email crashes the daemon.
+	isBackfill := source == db.SourceBackfill
+
 	defer func() {
 		if r := recover(); r != nil {
 			p.log.Error("pipeline process panic recovered — quarantining message",
 				"uid", uid, "account", accountName, "panic", r)
 			metrics.ScansTotal.WithLabelValues(db.VerdictSuspicious).Inc()
 			now := time.Now()
+			status := db.StatusQuarantined
+			if isBackfill {
+				status = db.StatusInbox
+			}
 			rec := &db.Scan{
 				AccountName:   accountName,
 				AccountUID:    db.MakeAccountUID(accountName, mailbox, uid),
@@ -132,13 +149,17 @@ func (p *Pipeline) Process(ctx context.Context, accountName string, raw []byte, 
 				Verdict:       db.VerdictSuspicious,
 				VerdictReason: fmt.Sprintf("process panic: %v", r),
 				Confidence:    1.0,
-				Status:        db.StatusQuarantined,
+				Status:        status,
+				Source:        source,
 				ActionedBy:    "auto",
 				CreatedAt:     now,
 				ActionedAt:    &now,
 			}
 			if err := p.gdb.Write(func(tx *gorm.DB) error { return tx.Create(rec).Error }); err != nil {
 				p.log.Error("panic recovery: scan record create failed", "err", err)
+				return
+			}
+			if isBackfill {
 				return
 			}
 			// Use a fresh context: the original ctx may be expired after a panic.
@@ -180,6 +201,10 @@ func (p *Pipeline) Process(ctx context.Context, accountName string, raw []byte, 
 		log.Error("email parse failed — quarantining unparseable message", "err", err)
 		metrics.ScansTotal.WithLabelValues(db.VerdictSuspicious).Inc()
 		now := time.Now()
+		parseStatus := db.StatusQuarantined
+		if isBackfill {
+			parseStatus = db.StatusInbox
+		}
 		rec := &db.Scan{
 			AccountName:   accountName,
 			AccountUID:    db.MakeAccountUID(accountName, mailbox, uid),
@@ -188,13 +213,17 @@ func (p *Pipeline) Process(ctx context.Context, accountName string, raw []byte, 
 			Verdict:       db.VerdictSuspicious,
 			VerdictReason: fmt.Sprintf("unparseable message: %v", err),
 			Confidence:    1.0,
-			Status:        db.StatusQuarantined,
+			Status:        parseStatus,
+			Source:        source,
 			ActionedBy:    "auto",
 			CreatedAt:     now,
 			ActionedAt:    &now,
 		}
 		if dbErr := p.gdb.Write(func(tx *gorm.DB) error { return tx.Create(rec).Error }); dbErr != nil {
 			log.Error("parse-failure scan record create failed", "err", dbErr)
+			return
+		}
+		if isBackfill {
 			return
 		}
 		qUID, qMailbox, imapErr := p.takeIMAPAction(ctx, "quarantine", mailbox, uid)
@@ -219,25 +248,31 @@ func (p *Pipeline) Process(ctx context.Context, accountName string, raw []byte, 
 		vd := decided("quarantine", "SPAM", "blocklisted: "+bl.Entry, 1.0, nil)
 		emlPath, _ := p.store.Write(accountName, email.MessageID, email.IMAPUID, raw)
 		rec := p.buildScanRecord(email, vd, emlPath)
+		rec.Source = source
+		if isBackfill {
+			rec.Status = db.StatusInbox
+		}
 		if err := p.gdb.Write(func(tx *gorm.DB) error { return tx.Create(rec).Error }); err != nil {
 			log.Error("blocklist scan record create failed — skipping IMAP action", "err", err)
 			return
 		}
-		qUID, qMailbox, imapErr := p.takeIMAPAction(ctx, "quarantine", mailbox, uid)
-		if imapErr != nil {
-			log.Error("imap action failed after retries — reverting scan status", "decision", "quarantine", "err", imapErr)
-			p.gdb.Write(func(tx *gorm.DB) error { //nolint:errcheck
-				tx.Model(rec).Update("status", db.StatusInbox)
-				tx.Create(&db.AuditLog{
-					ScanID: rec.ID,
-					Action: "IMAP_FAIL",
-					Actor:  "auto",
-					Note:   fmt.Sprintf("imap quarantine failed: %v", imapErr),
+		if !isBackfill {
+			qUID, qMailbox, imapErr := p.takeIMAPAction(ctx, "quarantine", mailbox, uid)
+			if imapErr != nil {
+				log.Error("imap action failed after retries — reverting scan status", "decision", "quarantine", "err", imapErr)
+				p.gdb.Write(func(tx *gorm.DB) error { //nolint:errcheck
+					tx.Model(rec).Update("status", db.StatusInbox)
+					tx.Create(&db.AuditLog{
+						ScanID: rec.ID,
+						Action: "IMAP_FAIL",
+						Actor:  "auto",
+						Note:   fmt.Sprintf("imap quarantine failed: %v", imapErr),
+					})
+					return nil
 				})
-				return nil
-			})
-		} else {
-			p.updateQuarantineUID(rec, email.AccountName, qUID, qMailbox)
+			} else {
+				p.updateQuarantineUID(rec, email.AccountName, qUID, qMailbox)
+			}
 		}
 		metrics.ScansTotal.WithLabelValues("SPAM").Inc()
 		metrics.PipelineDuration.Observe(time.Since(start).Seconds())
@@ -347,6 +382,11 @@ func (p *Pipeline) Process(ctx context.Context, accountName string, raw []byte, 
 	// Persist scan record — upsert so rescan updates the existing row.
 	// The idx_account_uid unique index means a plain Create would fail on rescan.
 	scanRecord := p.buildScanRecord(email, vd, emlPath)
+	scanRecord.Source = source
+	if isBackfill {
+		// Backfill: record the threat verdict but leave the message in place.
+		scanRecord.Status = db.StatusInbox
+	}
 	if err := p.gdb.Write(func(tx *gorm.DB) error {
 		return tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "account_uid"}, {Name: "imap_uid"}},
@@ -363,30 +403,40 @@ func (p *Pipeline) Process(ctx context.Context, accountName string, raw []byte, 
 		return
 	}
 
-	// Take IMAP action; revert DB status if action fails after retries.
-	// On successful quarantine, persist the new UID assigned in the destination
-	// folder (F-056) so Release/Delete operate on the correct UID.
-	qUID, qMailbox, imapErr := p.takeIMAPAction(ctx, vd.Decision, mailbox, uid)
-	if imapErr != nil {
-		log.Error("imap action failed after retries — reverting scan status",
-			"decision", vd.Decision, "err", imapErr)
-		p.gdb.Write(func(tx *gorm.DB) error { //nolint:errcheck
-			tx.Model(scanRecord).Update("status", db.StatusInbox)
-			tx.Create(&db.AuditLog{
-				ScanID: scanRecord.ID,
-				Action: "IMAP_FAIL",
-				Actor:  "auto",
-				Note:   fmt.Sprintf("imap %s failed: %v", vd.Decision, imapErr),
+	if !isBackfill {
+		// Take IMAP action; revert DB status if action fails after retries.
+		// On successful quarantine, persist the new UID assigned in the destination
+		// folder (F-056) so Release/Delete operate on the correct UID.
+		qUID, qMailbox, imapErr := p.takeIMAPAction(ctx, vd.Decision, mailbox, uid)
+		if imapErr != nil {
+			log.Error("imap action failed after retries — reverting scan status",
+				"decision", vd.Decision, "err", imapErr)
+			p.gdb.Write(func(tx *gorm.DB) error { //nolint:errcheck
+				tx.Model(scanRecord).Update("status", db.StatusInbox)
+				tx.Create(&db.AuditLog{
+					ScanID: scanRecord.ID,
+					Action: "IMAP_FAIL",
+					Actor:  "auto",
+					Note:   fmt.Sprintf("imap %s failed: %v", vd.Decision, imapErr),
+				})
+				return nil
 			})
-			return nil
-		})
-	} else if vd.Decision == "quarantine" {
-		p.auditQuarantineDesync(scanRecord, log, p.updateQuarantineUID(scanRecord, email.AccountName, qUID, qMailbox))
+		} else if vd.Decision == "quarantine" {
+			p.auditQuarantineDesync(scanRecord, log, p.updateQuarantineUID(scanRecord, email.AccountName, qUID, qMailbox))
+		}
 	}
 
 	// Notifications (fire-and-forget)
-	if vd.Decision != "pass" && p.notifier != nil {
-		p.notifier.Send(ctx, email, vd)
+	if p.notifier != nil {
+		if isBackfill {
+			if vd.Verdict != db.VerdictClean {
+				backfillVD := vd
+				backfillVD.Reason = "[Historical scan] " + vd.Reason
+				p.notifier.Send(ctx, email, backfillVD)
+			}
+		} else if vd.Decision != "pass" {
+			p.notifier.Send(ctx, email, vd)
+		}
 	}
 
 	// SSE broadcast for live dashboard updates
@@ -398,6 +448,9 @@ func (p *Pipeline) Process(ctx context.Context, accountName string, raw []byte, 
 
 	// Audit log
 	action := verdictToAction(vd)
+	if isBackfill {
+		action = db.ActionBackfill
+	}
 	if err := p.gdb.Write(func(tx *gorm.DB) error {
 		return tx.Create(&db.AuditLog{
 			ScanID:    scanRecord.ID,
