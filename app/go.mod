@@ -3,7 +3,7 @@ module github.com/izm1chael/mailhook
 go 1.26.3
 
 require (
-	github.com/PuerkitoBio/goquery v1.10.3
+	github.com/PuerkitoBio/goquery v1.12.0
 	github.com/emersion/go-imap/v2 v2.0.0-beta.5
 	github.com/emersion/go-message v0.18.2
 	github.com/fsnotify/fsnotify v1.10.1
